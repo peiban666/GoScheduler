@@ -108,6 +108,18 @@ gocron、goscheduler 使用的都是 MIT LICENSE
 ## 下载
 [releases](https://github.com/peiban666/GoScheduler/releases)
 
+### GitHub Actions 自动发布
+
+`.github/workflows/release.yml` 会在推送版本标签时自动测试、构建和发布软件包；
+也可在 Actions → **Release binaries** → **Run workflow** 中输入已有标签（例如 `v1.6`）补发。
+手动补发不移动或重写标签，严格构建该标签指向的源代码。
+
+- 提供 Windows、Linux、macOS 的 amd64 主程序与任务节点裸文件，及对应 `.zip` / `.tar.gz`。
+- 主程序已内嵌生产前端；前端测试、生产资源校验及后端测试通过后才发布。
+- 压缩包附带 MIT 许可证、README、更新日志及保留数据的升级说明。
+- 附带 `SHA256SUMS.txt` 及 `BUILD-INFO.json`，记录校验值和构建来源。
+- 发布文件只包含程序及明确列出的文档，不包含本机数据库、配置或通知密钥。
+
 ## 版本升级
 ### 从上游版本升级并保留数据
 

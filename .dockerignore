@@ -16,3 +16,5 @@ goscheduler-node-package
 *.exe
 *.test
 *.prof
+.github/scripts/__pycache__
+dist

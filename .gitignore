@@ -42,3 +42,5 @@ profile/*
 node_modules
 /.runtime
 /.verification
+/.github/scripts/__pycache__/
+/dist

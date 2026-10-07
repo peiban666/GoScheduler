@@ -1,0 +1,142 @@
+name: Release binaries
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing version tag to build and publish, e.g. v1.6'
+        required: true
+        default: v1.6
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      commit: ${{ steps.version.outputs.commit }}
+    steps:
+      - name: Check out release tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve the existing release tag
+        id: version
+        shell: bash
+        env:
+          REQUESTED_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          [[ "$REQUESTED_TAG" =~ ^v[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || {
+            echo "Expected a version tag such as v1.6"; exit 1;
+          }
+          commit=$(git rev-parse --verify "refs/tags/${REQUESTED_TAG}^{commit}")
+          echo "tag=$REQUESTED_TAG" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the exact tagged application source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.version.outputs.commit }}
+          path: source
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.8'
+          cache-dependency-path: source/go.sum
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Test release packaging
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
+
+      - name: Install frontend dependencies
+        working-directory: source/web/vue
+        run: npm install --no-audit --no-fund
+
+      - name: Test and build the production frontend
+        working-directory: source/web/vue
+        env:
+          NODE_OPTIONS: --openssl-legacy-provider
+        run: |
+          npm test
+          npm run build
+          npm run test:assets
+
+      - name: Embed the frontend and test the backend
+        working-directory: source
+        run: |
+          go run github.com/rakyll/statik -src=web/vue/dist -dest=internal -f
+          go test ./...
+
+      - name: Build, verify and package Windows, Linux and macOS binaries
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          SOURCE_COMMIT: ${{ steps.version.outputs.commit }}
+        run: |
+          python3 .github/scripts/package_release.py \
+            --source source --output dist \
+            --tag "$RELEASE_TAG" --commit "$SOURCE_COMMIT"
+          dist/assets/goscheduler-"${RELEASE_TAG}"-linux-amd64 --version
+          dist/assets/goscheduler-node-"${RELEASE_TAG}"-linux-amd64 -v
+          (cd dist/assets && sha256sum -c SHA256SUMS.txt)
+
+      - name: Upload verified release files
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-${{ steps.version.outputs.tag }}
+          path: dist/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified release files
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-${{ needs.build.outputs.tag }}
+          path: dist
+
+      - name: Verify downloaded checksums
+        run: cd dist/assets && sha256sum -c SHA256SUMS.txt
+
+      - name: Publish the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.build.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" dist/assets/* --clobber
+            gh release edit "$RELEASE_TAG" \
+              --title "GoScheduler ${RELEASE_TAG#v}" --notes-file dist/RELEASE-NOTES.md
+          else
+            gh release create "$RELEASE_TAG" dist/assets/* --verify-tag \
+              --title "GoScheduler ${RELEASE_TAG#v}" --notes-file dist/RELEASE-NOTES.md
+          fi
