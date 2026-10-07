@@ -2,10 +2,12 @@ package manage
 
 import (
 	"encoding/json"
+	"strconv"
 
 	"github.com/gaggad/goscheduler/internal/models"
 	"github.com/gaggad/goscheduler/internal/modules/logger"
 	"github.com/gaggad/goscheduler/internal/modules/utils"
+	"github.com/gaggad/goscheduler/internal/modules/webhook"
 	"gopkg.in/macaron.v1"
 )
 
@@ -111,20 +113,106 @@ func WebHook(ctx *macaron.Context) string {
 	webHook, err := settingModel.Webhook()
 	jsonResp := utils.JsonResponse{}
 	if err != nil {
-		logger.Error(err)
-		return jsonResp.Success(utils.SuccessContent, nil)
+		return jsonResp.CommonFailure("读取 Webhook 配置失败")
 	}
 
 	return jsonResp.Success("", webHook)
 }
 
-func UpdateWebHook(ctx *macaron.Context) string {
-	url := ctx.QueryTrim("url")
-	template := ctx.QueryTrim("template")
-	settingModel := new(models.Setting)
-	err := settingModel.UpdateWebHook(url, template)
+func webhookUpdate(ctx *macaron.Context) webhook.Update {
+	return webhook.Update{
+		Url: ctx.Query("url"), Template: ctx.Query("template"), Provider: ctx.Query("provider"),
+		SignEnabled: ctx.Query("sign_enabled"), Secret: ctx.Query("secret"),
+		ClearSecret: ctx.Query("clear_secret") == "1" || ctx.Query("clear_secret") == "true",
+	}
+}
 
-	return utils.JsonResponseByErr(err)
+func UpdateWebHook(ctx *macaron.Context) string {
+	json := utils.JsonResponse{}
+	settingModel := new(models.Setting)
+	err := settingModel.SaveWebhook(webhookUpdate(ctx))
+	if err != nil {
+		return json.CommonFailure(err.Error())
+	}
+	return json.Success("Webhook 配置已保存", nil)
+}
+
+func WebhookList(ctx *macaron.Context) string {
+	json := utils.JsonResponse{}
+	list, err := new(models.Setting).WebhookEndpoints()
+	if err != nil {
+		return json.CommonFailure("读取 Webhook 列表失败")
+	}
+	return json.Success("", list)
+}
+
+func WebhookOptions(ctx *macaron.Context) string {
+	json := utils.JsonResponse{}
+	list, err := new(models.Setting).WebhookEndpoints()
+	if err != nil {
+		return json.CommonFailure("读取 Webhook 列表失败")
+	}
+	type option struct {
+		Id       int    `json:"id"`
+		Name     string `json:"name"`
+		Provider string `json:"provider"`
+	}
+	options := make([]option, 0, len(list))
+	for _, endpoint := range list {
+		options = append(options, option{endpoint.Id, endpoint.Name, endpoint.Provider})
+	}
+	return json.Success("", options)
+}
+
+func StoreWebhook(ctx *macaron.Context) string {
+	json := utils.JsonResponse{}
+	id, err := strconv.Atoi(ctx.Query("id"))
+	if err != nil {
+		return json.CommonFailure("Webhook 编号无效")
+	}
+	endpoint, err := new(models.Setting).SaveWebhookEndpoint(id, ctx.Query("name"), webhookUpdate(ctx))
+	if err != nil {
+		return json.CommonFailure(err.Error())
+	}
+	return json.Success("Webhook 已保存", endpoint)
+}
+
+func RemoveWebhook(ctx *macaron.Context) string {
+	json := utils.JsonResponse{}
+	if err := new(models.Setting).RemoveWebhookEndpoint(ctx.ParamsInt(":id")); err != nil {
+		return json.CommonFailure(err.Error())
+	}
+	return json.Success("Webhook 已删除", nil)
+}
+
+func TestWebhook(ctx *macaron.Context) string {
+	json := utils.JsonResponse{}
+	id, err := strconv.Atoi(ctx.Query("id"))
+	if err != nil || id < -1 {
+		return json.CommonFailure("Webhook 编号无效")
+	}
+	config := webhook.Config{Provider: webhook.Generic}
+	if id >= 0 {
+		endpoint, err := new(models.Setting).WebhookEndpoint(id)
+		if err != nil {
+			return json.CommonFailure(err.Error())
+		}
+		config = endpoint.Config
+	}
+	// Tests support unsaved edits, but never mutate stored settings.
+	if ctx.Query("url") != "" {
+		config, err = webhook.Resolve(config, webhookUpdate(ctx))
+		if err != nil {
+			return json.CommonFailure(err.Error())
+		}
+	}
+	if config.Url == "" {
+		return json.CommonFailure("请先填写 Webhook URL")
+	}
+	if err := webhook.TestSend(config); err != nil {
+		return json.CommonFailure(err.Error())
+	}
+	return json.Success("测试通知已发送，机器人已确认接收", nil)
 }
 
 // endregion

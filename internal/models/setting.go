@@ -1,7 +1,13 @@
 package models
 
 import (
+	"database/sql"
 	"encoding/json"
+	"fmt"
+	"strings"
+	"sync"
+
+	"github.com/gaggad/goscheduler/internal/modules/webhook"
 )
 
 type Setting struct {
@@ -53,6 +59,8 @@ const (
 	WebhookCode        = "webhook"
 	WebhookTemplateKey = "template"
 	WebhookUrlKey      = "url"
+	WebhookSigningKey  = "signing"
+	WebhookNameKey     = "name"
 )
 
 // 初始化基本字段 邮件、slack等
@@ -250,45 +258,125 @@ func (setting *Setting) RemoveMailUser(id int) (int64, error) {
 	return Db.Delete(setting)
 }
 
-type WebHook struct {
-	Url      string `json:"url"`
-	Template string `json:"template"`
+type WebHook = webhook.Config
+
+type webhookSigning struct {
+	Provider    string `json:"provider"`
+	SignEnabled bool   `json:"sign_enabled"`
+	Secret      string `json:"secret"`
+}
+
+var webhookSettingsMu sync.Mutex
+
+func (setting *Setting) SaveWebhook(input webhook.Update) error {
+	webhookSettingsMu.Lock()
+	defer webhookSettingsMu.Unlock()
+	current, err := setting.Webhook()
+	if err != nil {
+		return fmt.Errorf("读取 Webhook 配置失败")
+	}
+	config, err := webhook.Resolve(current, input)
+	if err != nil {
+		return err
+	}
+	if err := setting.UpdateWebHook(config); err != nil {
+		return fmt.Errorf("保存 Webhook 配置失败")
+	}
+	return nil
 }
 
 func (setting *Setting) Webhook() (WebHook, error) {
-	list := make([]Setting, 0)
-	err := Db.Where("code = ?", WebhookCode).Find(&list)
-	webHook := WebHook{}
-	if err != nil {
-		return webHook, err
-	}
-
-	setting.formatWebhook(list, &webHook)
-
-	return webHook, err
+	config, _, err := setting.legacyWebhook()
+	return config, err
 }
 
-func (setting *Setting) formatWebhook(list []Setting, webHook *WebHook) {
+func (setting *Setting) legacyWebhook() (WebHook, string, error) {
+	list := make([]Setting, 0)
+	err := Db.Where("code = ?", WebhookCode).Find(&list)
+	webHook := WebHook{Provider: webhook.Generic}
+	name := "默认 Webhook"
+	if err != nil {
+		return webHook, name, err
+	}
+	for _, entry := range list {
+		if entry.Key == WebhookNameKey && strings.TrimSpace(entry.Value) != "" {
+			name = entry.Value
+		}
+	}
+
+	err = setting.formatWebhook(list, &webHook)
+	return webHook, name, err
+}
+
+func (setting *Setting) formatWebhook(list []Setting, webHook *WebHook) error {
 	for _, v := range list {
 		switch v.Key {
 		case WebhookUrlKey:
 			webHook.Url = v.Value
 		case WebhookTemplateKey:
 			webHook.Template = v.Value
+		case WebhookSigningKey:
+			var signing webhookSigning
+			if err := json.Unmarshal([]byte(v.Value), &signing); err != nil {
+				return err
+			}
+			webHook.Provider = signing.Provider
+			webHook.SignEnabled = signing.SignEnabled
+			webHook.Secret = signing.Secret
 		}
-
 	}
+	if webHook.Provider == "" {
+		webHook.Provider = webhook.Generic
+	}
+	webHook.HasSecret = webHook.Secret != ""
+	return nil
 }
 
-func (setting *Setting) UpdateWebHook(url, template string) error {
-	setting.Value = url
+func (setting *Setting) UpdateWebHook(config WebHook) error {
+	return setting.updateWebhook(config, nil)
+}
 
-	Db.Cols("value").Update(setting, Setting{Code: WebhookCode, Key: WebhookUrlKey})
-
-	setting.Value = template
-	Db.Cols("value").Update(setting, Setting{Code: WebhookCode, Key: WebhookTemplateKey})
-
-	return nil
+func (setting *Setting) updateWebhook(config WebHook, name *string) error {
+	signing, err := json.Marshal(webhookSigning{config.Provider, config.SignEnabled, config.Secret})
+	if err != nil {
+		return err
+	}
+	// Parameterized database/sql avoids xorm's development SQL argument logging:
+	// the robot URL can contain a token and the signing metadata contains a secret.
+	tx, err := Db.DB().DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	table := Db.Quote(Db.TableName(new(Setting)))
+	sqlForDialect := func(statement string) string {
+		for _, filter := range Db.Dialect().Filters() {
+			statement = filter.Do(statement, Db.Dialect(), nil)
+		}
+		return statement
+	}
+	entries := []struct{ key, value string }{
+		{WebhookUrlKey, config.Url}, {WebhookTemplateKey, config.Template}, {WebhookSigningKey, string(signing)},
+	}
+	if name != nil {
+		entries = append(entries, struct{ key, value string }{WebhookNameKey, *name})
+	}
+	for _, entry := range entries {
+		var id int
+		err := tx.QueryRow(sqlForDialect("SELECT id FROM "+table+" WHERE code = ? AND "+Db.Quote("key")+" = ? LIMIT 1 FOR UPDATE"),
+			WebhookCode, entry.key).Scan(&id)
+		if err == sql.ErrNoRows {
+			_, err = tx.Exec(sqlForDialect("INSERT INTO "+table+" (code, "+Db.Quote("key")+", value) VALUES (?, ?, ?)"),
+				WebhookCode, entry.key, entry.value)
+		} else if err == nil {
+			_, err = tx.Exec(sqlForDialect("UPDATE "+table+" SET value = ? WHERE code = ? AND "+Db.Quote("key")+" = ?"),
+				entry.value, WebhookCode, entry.key)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // endregion

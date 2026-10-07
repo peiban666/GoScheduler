@@ -60,7 +60,7 @@
             <el-form label-position="left">
               <el-form-item>
                   重试次数: {{scope.row.retry_times}} <br>
-                  cron表达式: {{scope.row.spec}} <br>
+                  调度规则: {{scope.row.spec}} <br>
                   命令: {{scope.row.command}}
               </el-form-item>
             </el-form>

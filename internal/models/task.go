@@ -272,6 +272,9 @@ func (task *Task) parseWhere(session *xorm.Session, params CommonMap) {
 
 	tag, ok := params["Tag"]
 	if ok && tag.(string) != "" {
-		session.And("tag = ? ", tag)
+		session.And("TRIM(t.tag) = ?", tag)
+	}
+	if ungrouped, ok := params["Ungrouped"]; ok && ungrouped.(bool) {
+		session.And("TRIM(t.tag) = ?", "")
 	}
 }

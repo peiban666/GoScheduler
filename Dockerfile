@@ -1,20 +1,18 @@
 FROM golang:1.15-alpine as builder
 
-RUN apk update \
-    && apk add --no-cache git ca-certificates make bash yarn nodejs
+RUN apk add --no-cache git ca-certificates
 
 RUN go env -w GO111MODULE=on && \
     go env -w GOPROXY=https://goproxy.cn,direct
 
 WORKDIR /app
 
-RUN git clone https://github.com/gaggad/goscheduler.git \
-    && cd goscheduler \
-    && yarn config set ignore-engines true \
-    && make install-vue \
-    && make build-vue \
-    && make statik \
-    && CGO_ENABLED=0 make goscheduler
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Build this checkout, including its committed production frontend assets.
+COPY . .
+RUN CGO_ENABLED=0 go build -o /app/bin/goscheduler ./cmd/goscheduler
 
 FROM alpine:3.12
 
@@ -26,7 +24,8 @@ RUN cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
 
 WORKDIR /app
 
-COPY --from=builder /app/goscheduler/bin/goscheduler .
+COPY --from=builder /app/bin/goscheduler .
+COPY LICENSE .
 
 RUN chown -R app:app ./
 

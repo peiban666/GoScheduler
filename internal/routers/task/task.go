@@ -4,15 +4,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gaggad/goscheduler/internal/util"
-
 	"github.com/gaggad/goscheduler/internal/models"
 	"github.com/gaggad/goscheduler/internal/modules/logger"
+	"github.com/gaggad/goscheduler/internal/modules/schedule"
 	"github.com/gaggad/goscheduler/internal/modules/utils"
 	"github.com/gaggad/goscheduler/internal/routers/base"
 	"github.com/gaggad/goscheduler/internal/service"
 	"github.com/go-macaron/binding"
-	"github.com/jakecoffman/cron"
 	"gopkg.in/macaron.v1"
 )
 
@@ -73,6 +71,74 @@ func Index(ctx *macaron.Context) string {
 	})
 }
 
+func Groups(ctx *macaron.Context) string {
+	groups, err := new(models.Task).Groups(parseQueryParams(ctx))
+	json := utils.JsonResponse{}
+	if err != nil {
+		return json.CommonFailure("获取任务分组失败", err)
+	}
+	return json.Success(utils.SuccessContent, groups)
+}
+
+func AssignGroup(ctx *macaron.Context) string {
+	json := utils.JsonResponse{}
+	ids, err := models.ParseTaskGroupIDs(ctx.QueryTrim("ids"))
+	if err != nil {
+		return json.CommonFailure(err.Error())
+	}
+	name, err := models.NormalizeTaskGroupName(ctx.Query("tag"))
+	if err != nil {
+		return json.CommonFailure(err.Error())
+	}
+	if err := new(models.Task).AssignGroup(ids, name); err != nil {
+		return json.CommonFailure("移动分组失败", err)
+	}
+	return json.Success("任务分组已更新", nil)
+}
+
+func CreateGroup(ctx *macaron.Context) string {
+	json := utils.JsonResponse{}
+	if err := new(models.Task).CreateGroup(ctx.Query("tag")); err != nil {
+		return json.CommonFailure(err.Error())
+	}
+	return json.Success("分组已创建", nil)
+}
+
+func RenameGroup(ctx *macaron.Context) string {
+	json := utils.JsonResponse{}
+	if err := new(models.Task).RenameGroup(ctx.Query("tag"), ctx.Query("new_tag")); err != nil {
+		return json.CommonFailure(err.Error())
+	}
+	return json.Success("分组已重命名", nil)
+}
+
+func DeleteGroup(ctx *macaron.Context) string {
+	json := utils.JsonResponse{}
+	name, err := models.NormalizeTaskGroupName(ctx.Query("tag"))
+	if err != nil {
+		return json.CommonFailure(err.Error())
+	}
+	mode := ctx.Query("delete_tasks")
+	if mode != "0" && mode != "1" {
+		return json.CommonFailure("请选择是否删除组内任务")
+	}
+	expected, err := strconv.Atoi(ctx.Query("expected_count"))
+	if err != nil || expected < 0 {
+		return json.CommonFailure("请确认组内任务数量")
+	}
+	deleteTasks := mode == "1"
+	ids, err := new(models.Task).DeleteGroup(name, deleteTasks, expected)
+	if err != nil {
+		return json.CommonFailure(err.Error())
+	}
+	if deleteTasks {
+		for _, id := range ids {
+			service.ServiceTask.Remove(id)
+		}
+	}
+	return json.Success("分组已删除", map[string]interface{}{"affected": len(ids), "deleted_tasks": deleteTasks})
+}
+
 // Detail 任务详情
 func Detail(ctx *macaron.Context) string {
 	id := ctx.ParamsInt(":id")
@@ -91,6 +157,10 @@ func Detail(ctx *macaron.Context) string {
 func Store(ctx *macaron.Context, form TaskForm) string {
 	json := utils.JsonResponse{}
 	taskModel := models.Task{}
+	groupName, err := models.NormalizeTaskGroupName(form.Tag)
+	if err != nil {
+		return json.CommonFailure(err.Error())
+	}
 	var id = form.Id
 	nameExists, err := taskModel.NameExist(form.Name, form.Id)
 	if err != nil {
@@ -109,7 +179,7 @@ func Store(ctx *macaron.Context, form TaskForm) string {
 	taskModel.Command = strings.TrimSpace(form.Command)
 	taskModel.RequestBody = form.RequestBody
 	taskModel.Timeout = form.Timeout
-	taskModel.Tag = form.Tag
+	taskModel.Tag = groupName
 	taskModel.Remark = form.Remark
 	taskModel.Multi = form.Multi
 	taskModel.RetryTimes = form.RetryTimes
@@ -127,6 +197,11 @@ func Store(ctx *macaron.Context, form TaskForm) string {
 	taskModel.DependencyTaskId = strings.TrimSpace(form.DependencyTaskId)
 	if taskModel.NotifyStatus > 0 && taskModel.NotifyType != 3 && taskModel.NotifyReceiverId == "" {
 		return json.CommonFailure("至少选择一个通知接收者")
+	}
+	if taskModel.NotifyStatus > 0 && taskModel.NotifyType == 3 {
+		if _, err := new(models.Setting).WebhooksForTask(taskModel.NotifyReceiverId); err != nil {
+			return json.CommonFailure(err.Error())
+		}
 	}
 	taskModel.HttpMethod = form.HttpMethod
 	if taskModel.Protocol == models.TaskHTTP {
@@ -153,12 +228,10 @@ func Store(ctx *macaron.Context, form TaskForm) string {
 	}
 
 	if taskModel.Level == models.TaskLevelParent {
-		err = util.PanicToError(func() {
-			cron.Parse(form.Spec)
-		})
-		if err != nil {
-			return json.CommonFailure("crontab表达式解析失败", err)
+		if _, err := schedule.Parse(form.Spec); err != nil {
+			return json.CommonFailure(err.Error())
 		}
+		taskModel.Spec, _ = schedule.Normalize(form.Spec)
 	} else {
 		taskModel.DependencyTaskId = ""
 		taskModel.Spec = ""
@@ -288,6 +361,7 @@ func parseQueryParams(ctx *macaron.Context) models.CommonMap {
 	params["Name"] = ctx.QueryTrim("name")
 	params["Protocol"] = ctx.QueryInt("protocol")
 	params["Tag"] = ctx.QueryTrim("tag")
+	params["Ungrouped"] = ctx.QueryInt("ungrouped") == 1
 	status := ctx.QueryInt("status")
 	if status >= 0 {
 		status -= 1

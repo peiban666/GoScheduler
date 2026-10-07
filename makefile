@@ -60,8 +60,7 @@ run-vue:
 
 .PHONY: statik
 statik:
-	go get github.com/rakyll/statik
-	go generate ./...
+	go run github.com/rakyll/statik -src=web/vue/dist -dest=internal -f
 
 .PHONY: lint
 	golangci-lint run

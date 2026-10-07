@@ -1,5 +1,5 @@
 // Command goscheduler
-//go:generate statik -src=../../web/public -dest=../../internal -f
+//go:generate go run github.com/rakyll/statik -src=../../web/vue/dist -dest=../../internal -f
 
 package main
 
@@ -21,7 +21,7 @@ import (
 )
 
 var (
-	AppVersion           = "1.5"
+	AppVersion           = "1.6"
 	BuildDate, GitCommit string
 )
 

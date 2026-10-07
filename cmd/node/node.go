@@ -15,7 +15,8 @@ import (
 )
 
 var (
-	AppVersion, BuildDate, GitCommit string
+	AppVersion           = "1.6"
+	BuildDate, GitCommit string
 )
 
 func main() {

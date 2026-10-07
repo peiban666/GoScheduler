@@ -1,0 +1,345 @@
+html, body, #app {
+  width: 100%;
+  min-width: 0;
+}
+
+.app-layout {
+  min-height: 100vh;
+  flex-direction: column;
+}
+
+.app-layout > .app-header {
+  flex: 0 0 auto;
+}
+
+.app-body, #main-container, #main-container > .el-container,
+#main-container > .el-container > .el-main {
+  min-width: 0;
+  max-width: 100%;
+}
+
+#main-container > .el-container {
+  min-height: calc(100vh - 60px);
+  align-items: stretch;
+}
+
+#main-container > .el-container > .el-main {
+  flex: 1 1 0%;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.app-nav.el-menu--horizontal {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 0 12px;
+  border-bottom: 0;
+}
+
+.app-nav.el-menu--horizontal::before,
+.app-nav.el-menu--horizontal::after {
+  display: none;
+}
+
+.app-brand {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 0 16px 0 0;
+  line-height: 60px;
+  color: paleturquoise;
+  font-size: 18px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.app-nav.el-menu--horizontal > .el-menu-item {
+  float: none;
+  flex: 0 0 auto;
+  padding: 0 16px;
+  text-align: center;
+}
+
+.app-nav.el-menu--horizontal > .app-account {
+  float: none;
+  margin-left: auto;
+  max-width: 180px;
+}
+
+.app-account > .el-submenu__title {
+  display: flex;
+  align-items: center;
+}
+
+.app-account-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-sidebar {
+  flex: 0 0 136px;
+  width: 136px;
+  background: #545c64;
+}
+
+.app-sidebar > .el-menu {
+  border-right: 0;
+}
+
+.task-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.task-filters .el-form-item {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0;
+}
+
+.task-filters .el-form-item__label {
+  float: none;
+  padding: 0 0 6px;
+  text-align: left;
+  line-height: 22px;
+}
+
+.task-filters .el-form-item__content {
+  display: block;
+  min-width: 0;
+  width: 100%;
+}
+
+.task-filters .el-input, .task-filters .el-select {
+  width: 100%;
+}
+
+.task-filters .filter-actions {
+  grid-column: 1 / -1;
+}
+
+.group-overview .el-collapse-item__header {
+  height: auto;
+  min-height: 48px;
+}
+
+#main-container .el-table {
+  max-width: 100%;
+}
+
+#main-container .el-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  white-space: normal;
+}
+
+#main-container .el-pagination__sizes,
+#main-container .el-pagination__total {
+  margin: 0;
+}
+
+#main-container .el-form {
+  max-width: 100%;
+}
+
+#main-container .el-form:not(.el-form--inline) .el-select {
+  max-width: 100%;
+}
+
+.el-dialog, .el-message-box, .el-select-dropdown {
+  max-width: calc(100vw - 24px);
+  box-sizing: border-box;
+}
+
+.login-dialog {
+  margin-top: max(24px, 12vh) !important;
+}
+
+.login-dialog .el-form-item__content {
+  min-width: 0;
+}
+
+#main-container .el-row--flex {
+  flex-wrap: wrap;
+}
+
+#main-container .el-row--flex > .el-col-2,
+#main-container .el-row--flex > .el-col-3 {
+  width: auto;
+  margin-left: 8px;
+  margin-bottom: 8px;
+}
+
+@media (max-width: 1199px) {
+  .task-edit-form .el-row > .el-col:not(.el-col-24) {
+    width: 50%;
+  }
+
+  .task-edit-form .el-row > .el-col-16,
+  .task-edit-form .el-row > .el-col-20 {
+    width: 100%;
+  }
+}
+
+@media (max-width: 767px) {
+  .app-nav.el-menu--horizontal {
+    padding: 0 8px;
+  }
+
+  .app-nav .app-brand {
+    flex: 1 0 100%;
+    line-height: 48px;
+  }
+
+  .app-nav.has-user .app-brand {
+    flex-basis: calc(100% - 150px);
+  }
+
+  .app-nav.el-menu--horizontal > .app-account {
+    order: 1;
+    flex: 0 0 150px;
+    max-width: 150px;
+    margin-left: 0;
+  }
+
+  .app-account > .el-submenu__title {
+    height: 48px !important;
+    line-height: 48px !important;
+    justify-content: flex-end;
+    padding: 0 8px;
+  }
+
+  .app-nav.el-menu--horizontal > .el-menu-item {
+    order: 2;
+    flex: 1 1 0%;
+    min-width: 0;
+    height: 44px;
+    line-height: 44px;
+    padding: 0 6px;
+    font-size: 13px;
+  }
+
+  #main-container > .el-container {
+    flex-direction: column;
+    min-height: calc(100vh - 92px);
+  }
+
+  #main-container > .el-container > .el-main {
+    padding: 16px 12px;
+  }
+
+  .app-sidebar {
+    flex: 0 0 auto;
+    width: 100% !important;
+  }
+
+  .app-sidebar > .el-menu {
+    display: flex;
+    height: auto;
+  }
+
+  .app-sidebar .el-menu-item {
+    flex: 1 1 0%;
+    min-width: 0;
+    height: 44px;
+    line-height: 44px;
+    padding: 0 12px !important;
+    text-align: center;
+  }
+
+  .task-filters {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+  }
+
+  .task-edit-form .el-row > .el-col,
+  #main-container .el-form:not(.el-form--inline) .el-row > .el-col {
+    width: 100%;
+  }
+
+  #main-container .el-form:not(.el-form--inline) .el-form-item__label,
+  .login-dialog .el-form-item__label {
+    float: none;
+    width: auto !important;
+    padding: 0 0 6px;
+    line-height: 22px;
+    text-align: left;
+  }
+
+  #main-container .el-form:not(.el-form--inline) .el-form-item__content,
+  .login-dialog .el-form-item__content {
+    margin-left: 0 !important;
+    min-width: 0;
+  }
+
+  #main-container .el-form:not(.el-form--inline) .el-select,
+  #main-container .el-form:not(.el-form--inline) .el-date-editor {
+    width: 100%;
+  }
+
+  #main-container .el-form--inline:not(.task-filters) .el-form-item {
+    max-width: 100%;
+  }
+
+  #main-container .el-form--inline:not(.task-filters) .el-form-item__content {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .el-dialog {
+    width: calc(100% - 24px) !important;
+  }
+
+  .el-dialog__body {
+    padding: 20px;
+  }
+
+  .el-dialog__footer {
+    padding: 12px 20px 20px;
+  }
+
+  .el-dialog__footer .el-button,
+  .el-message-box__btns .el-button {
+    max-width: 100%;
+    white-space: normal;
+  }
+
+  .login-dialog .el-form-item:last-child {
+    margin-bottom: 0;
+  }
+
+  .login-dialog .el-button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 479px) {
+  .task-filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .group-content {
+    padding: 8px;
+  }
+
+  .schedule-picker .el-radio-group {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .schedule-picker .el-radio-button__inner {
+    padding: 9px 10px;
+  }
+
+  .schedule-picker .schedule-time {
+    flex-wrap: wrap;
+  }
+}

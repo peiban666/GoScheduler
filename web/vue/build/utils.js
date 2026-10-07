@@ -47,7 +47,10 @@ exports.cssLoaders = function (options) {
     if (options.extract) {
       return ExtractTextPlugin.extract({
         use: loaders,
-        fallback: 'vue-style-loader'
+        fallback: 'vue-style-loader',
+        // Extracted CSS lives in static/css; resolve its font/image URLs
+        // relative to the asset root, not the HTML's public/ prefix.
+        publicPath: '../../'
       })
     } else {
       return ['vue-style-loader'].concat(loaders)

@@ -36,5 +36,9 @@ profile/*
 /web/public/index.html
 /goscheduler-package
 /goscheduler-node-package
+/goscheduler-build
+/goscheduler-node-build
 
 node_modules
+/.runtime
+/.verification

@@ -1,348 +1,373 @@
 <template>
-<el-container>
-  <task-sidebar></task-sidebar>
-  <el-main>
-    <el-form :inline="true" >
-      <el-row>
-        <el-form-item label="任务ID">
-          <el-input v-model.trim="searchParams.id"></el-input>
+  <el-container>
+    <task-sidebar></task-sidebar>
+    <el-main>
+      <el-form :inline="true" class="task-filters">
+        <el-form-item label="任务ID"><el-input v-model.trim="searchParams.id"></el-input></el-form-item>
+        <el-form-item label="任务名称"><el-input v-model.trim="searchParams.name"></el-input></el-form-item>
+        <el-form-item label="任务分组">
+          <el-select v-model="selectedGroup" filterable>
+            <el-option label="全部分组" value=""></el-option>
+            <el-option label="未分组" value="ungrouped"></el-option>
+            <el-option v-for="group in namedGroupChoices" :key="group.key" :label="group.name" :value="group.key"></el-option>
+          </el-select>
         </el-form-item>
-        <el-form-item label="任务名称">
-          <el-input v-model.trim="searchParams.name"></el-input>
-        </el-form-item>
-        <el-form-item label="标签">
-          <el-input v-model.trim="searchParams.tag"></el-input>
-        </el-form-item>
-      </el-row>
-      <el-row>
         <el-form-item label="执行方式">
-          <el-select v-model.trim="searchParams.protocol">
+          <el-select v-model="searchParams.protocol">
             <el-option label="全部" value=""></el-option>
-            <el-option
-              v-for="item in protocolList"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value">
-            </el-option>
+            <el-option label="http" value="1"></el-option><el-option label="shell" value="2"></el-option>
           </el-select>
         </el-form-item>
         <el-form-item label="任务节点">
-          <el-select v-model.trim="searchParams.host_id">
+          <el-select v-model="searchParams.host_id">
             <el-option label="全部" value=""></el-option>
-            <el-option
-              v-for="item in hosts"
-              :key="item.id"
-              :label="item.alias + ' - ' + item.name + ':' + item.port "
-              :value="item.id">
-            </el-option>
+            <el-option v-for="host in hosts" :key="host.id" :label="host.alias + ' - ' + host.name + ':' + host.port" :value="host.id"></el-option>
           </el-select>
         </el-form-item>
         <el-form-item label="状态">
-          <el-select v-model.trim="searchParams.status">
+          <el-select v-model="searchParams.status">
             <el-option label="全部" value=""></el-option>
-            <el-option
-              v-for="item in statusList"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value">
-            </el-option>
+            <el-option label="激活" value="2"></el-option><el-option label="停止" value="1"></el-option>
           </el-select>
         </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="search()">搜索</el-button>
-        </el-form-item>
-      </el-row>
-    </el-form>
-    <el-row type="flex" justify="end">
-      <el-col :span="2">
-        <el-button type="primary" @click="toEdit(null)" v-if="this.$store.getters.user.isAdmin">新增</el-button>
-      </el-col>
-      <el-col :span="2">
-        <el-button type="info" @click="refresh">刷新</el-button>
-      </el-col>
-    </el-row>
-    <el-pagination
-      background
-      layout="prev, pager, next, sizes, total"
-      :total="taskTotal"
-      :page-size="20"
-      @size-change="changePageSize"
-      @current-change="changePage"
-      @prev-click="changePage"
-      @next-click="changePage">
-    </el-pagination>
-    <el-table
-      :data="tasks"
-      tooltip-effect="dark"
-      border
-      style="width: 100%">
-      <el-table-column type="expand">
-        <template slot-scope="scope">
-          <el-form label-position="left" inline class="demo-table-expand">
-            <el-form-item label="任务创建时间:">
-              {{scope.row.created | formatTime}} <br>
-            </el-form-item>
-            <el-form-item label="任务类型:">
-              {{scope.row.level | formatLevel}} <br>
-            </el-form-item>
-            <el-form-item label="单实例运行:">
-               {{scope.row.multi | formatMulti}} <br>
-            </el-form-item>
-            <el-form-item label="超时时间:">
-              {{scope.row.timeout | formatTimeout}} <br>
-            </el-form-item>
-            <el-form-item label="重试次数:">
-              {{scope.row.retry_times}} <br>
-            </el-form-item>
-            <el-form-item label="重试间隔:">
-              {{scope.row.retry_interval | formatRetryTimesInterval}}
-            </el-form-item> <br>
-            <el-form-item label="任务节点">
-              <div v-for="item in scope.row.hosts" :key="item.host_id">
-                {{item.alias}} - {{item.name}}:{{item.port}} <br>
+        <el-form-item class="filter-actions"><el-button type="primary" @click="search()">搜索</el-button></el-form-item>
+      </el-form>
+      <div class="group-toolbar">
+        <span class="group-summary">共 {{groups.length}} 个分组，{{taskTotal}} 个任务</span>
+        <el-button v-if="isAdmin" type="primary" @click="toEdit(null)">新增任务</el-button>
+        <el-button v-if="isAdmin" icon="el-icon-plus" @click="createDialog = true">新建分组</el-button>
+        <el-button v-if="isAdmin" :disabled="selectedIDs.length === 0" @click="moveDialog = true">移入分组<span v-if="selectedIDs.length">（{{selectedIDs.length}}）</span></el-button>
+        <el-button :disabled="expandedGroups.length === 0" @click="expandedGroups = []">全部折叠</el-button>
+        <el-button @click="refresh">刷新</el-button>
+      </div>
+      <div class="group-hint">分组默认折叠，点击组名查看任务；勾选任务后可批量移入同一组。</div>
+      <div v-loading="loadingGroups" class="group-overview">
+        <el-alert v-if="groupError" title="分组加载失败，请点击刷新重试" type="error" :closable="false"></el-alert>
+        <div v-else-if="!loadingGroups && groups.length === 0" class="group-empty">暂无符合条件的任务</div>
+        <el-collapse v-model="expandedGroups" @change="openGroups">
+          <el-collapse-item v-for="group in groups" :key="group.key" :name="group.key">
+            <template slot="title">
+              <div class="group-title">
+                <i class="el-icon-folder"></i><strong>{{group.title}}</strong>
+                <el-tag size="small" type="info">{{group.total}} 个任务</el-tag>
+                <el-button v-if="isAdmin" type="text" @click.stop="toEdit(null, group)">组内新增</el-button>
+                <el-button v-if="isAdmin && group.name" type="text" @click.stop="openRenameGroup(group)">重命名</el-button>
+                <el-button v-if="isAdmin && group.name" type="text" class="group-delete-button" @click.stop="openDeleteGroup(group)">删除分组</el-button>
               </div>
-            </el-form-item> <br>
-            <el-form-item label="命令:" style="width: 100%">
-              {{scope.row.command}}
-            </el-form-item> <br>
-            <el-form-item label="备注" style="width: 100%">
-              {{scope.row.remark}}
-            </el-form-item>
-          </el-form>
-        </template>
-      </el-table-column>
-      <el-table-column
-        prop="id"
-        label="任务ID">
-      </el-table-column>
-      <el-table-column
-        prop="name"
-        label="任务名称"
-      width="150">
-      </el-table-column>
-      <el-table-column
-        prop="tag"
-        label="标签">
-      </el-table-column>
-      <el-table-column
-        prop="spec"
-        label="cron表达式"
-      width="120">
-      </el-table-column>
-      <el-table-column label="下次执行时间" width="160">
-        <template slot-scope="scope">
-          {{scope.row.next_run_time | formatTime}}
-        </template>
-      </el-table-column>
-      <el-table-column
-        prop="protocol"
-        :formatter="formatProtocol"
-        label="执行方式">
-      </el-table-column>
-      <el-table-column
-        label="状态" v-if="this.isAdmin">
-          <template slot-scope="scope">
-            <el-switch
-              v-if="scope.row.level === 1"
-              v-model="scope.row.status"
-              :active-value="1"
-              :inactive-vlaue="0"
-              active-color="#13ce66"
-              @change="changeStatus(scope.row)"
-              inactive-color="#ff4949">
-            </el-switch>
+            </template>
+            <div v-loading="groupStates[group.key].loading" class="group-content">
+              <el-button v-if="groupStates[group.key].error" size="small" @click="loadGroup(group)">加载失败，点击重试</el-button>
+              <template v-if="groupStates[group.key].loaded">
+                <task-table :tasks="groupStates[group.key].tasks" :is-admin="isAdmin"
+                  @selection-change="selectTasks(group.key, $event)" @edit="toEdit" @run="runTask" @remove="remove" @log="jumpToLog" @status="changeStatus">
+                </task-table>
+                <el-pagination background layout="prev, pager, next, sizes, total" :total="groupStates[group.key].total"
+                  :pager-count="5"
+                  :current-page="groupStates[group.key].page" :page-size="groupStates[group.key].pageSize" :page-sizes="[20, 50, 100]"
+                  @current-change="changeGroupPage(group, $event)" @size-change="changeGroupSize(group, $event)">
+                </el-pagination>
+              </template>
+            </div>
+          </el-collapse-item>
+        </el-collapse>
+      </div>
+      <el-dialog title="移入任务分组" :visible.sync="moveDialog" width="420px">
+        <p>将选中的 {{selectedIDs.length}} 个任务移入同一组，不改变执行时间和启停状态。</p>
+        <group-picker v-model="moveGroup" :groups="groupChoices" @created="groupCreated"></group-picker>
+        <div class="group-hint">选择已有分组，或点击下拉框底部「＋ 新建分组」；选择未分组可移出当前分组。</div>
+        <span slot="footer">
+          <el-button :disabled="savingGroup" @click="moveDialog = false">取消</el-button>
+          <el-button type="primary" :loading="savingGroup" :disabled="selectedIDs.length === 0" @click="assignGroup">确定移入</el-button>
+        </span>
+      </el-dialog>
+      <group-create-dialog v-model="createDialog" @created="groupCreated"></group-create-dialog>
+      <group-rename-dialog v-model="renameDialog" :group-name="renameTarget" @renamed="groupRenamed"></group-rename-dialog>
+      <el-dialog
+        title="删除任务分组"
+        :visible.sync="deleteDialog"
+        width="480px"
+        :show-close="!deletingGroup"
+        :close-on-click-modal="!deletingGroup"
+        :close-on-press-escape="!deletingGroup">
+        <div v-loading="deleteLoading" class="group-delete-body">
+          <template v-if="deleteTarget">
+            <p>分组「{{deleteTarget.name}}」共有 <strong>{{deleteTarget.total}}</strong> 个任务。</p>
+            <p class="group-hint">以下操作针对整个分组，不仅是当前搜索结果或当前页。</p>
+            <el-radio-group v-model="deleteTasks" :disabled="deletingGroup">
+              <div class="group-delete-choice">
+                <el-radio :label="false">仅删除分组，保留任务</el-radio>
+                <div class="group-hint">任务移到「未分组」，执行时间和启停状态保持不变。</div>
+              </div>
+              <div class="group-delete-choice">
+                <el-radio :label="true">删除分组及组内全部任务</el-radio>
+                <div class="group-hint">删除组内全部 {{deleteTarget.total}} 个任务并移除后续调度；历史日志保留。</div>
+              </div>
+            </el-radio-group>
+            <el-alert v-if="deleteTasks && deleteTarget.total > 0"
+              :title="'将删除 ' + deleteTarget.total + ' 个任务，此操作不可撤销。已在运行的任务不会被强制终止。'"
+              type="error" :closable="false">
+            </el-alert>
           </template>
-      </el-table-column>
-      <el-table-column label="状态" v-else>
-        <template slot-scope="scope">
-          <el-switch
-            v-if="scope.row.level === 1"
-            v-model="scope.row.status"
-            :active-value="1"
-            :inactive-vlaue="0"
-            active-color="#13ce66"
-            :disabled="true"
-            inactive-color="#ff4949">
-          </el-switch>
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="220" v-if="this.isAdmin">
-        <template slot-scope="scope">
-          <el-row>
-            <el-button type="primary" @click="toEdit(scope.row)">编辑</el-button>
-            <el-button type="success" @click="runTask(scope.row)">手动执行</el-button>
-          </el-row>
-          <br>
-          <el-row>
-            <el-button type="info" @click="jumpToLog(scope.row)">查看日志</el-button>
-            <el-button type="danger" @click="remove(scope.row)">删除</el-button>
-          </el-row>
-        </template>
-      </el-table-column>
-    </el-table>
-  </el-main>
-</el-container>
+        </div>
+        <span slot="footer">
+          <el-button :disabled="deletingGroup" @click="deleteDialog = false">取消</el-button>
+          <el-button
+            :type="deleteTasks ? 'danger' : 'primary'"
+            :loading="deletingGroup"
+            :disabled="deleteLoading || !deleteTarget"
+            @click="confirmDeleteGroup">
+            {{deleteTasks ? '删除分组及任务' : '仅删除分组'}}
+          </el-button>
+        </span>
+      </el-dialog>
+    </el-main>
+  </el-container>
 </template>
 
 <script>
 import taskSidebar from './sidebar'
+import taskTable from '../../components/task/taskTable'
+import groupPicker from '../../components/task/groupPicker'
+import groupCreateDialog from '../../components/task/groupCreateDialog'
+import groupRenameDialog from '../../components/task/groupRenameDialog'
 import taskService from '../../api/task'
+import {groupKey, groupQuery, prepareGroups, normalizeGroupName} from '../../utils/taskGroups'
 
 export default {
   name: 'task-list',
+  components: {taskSidebar, taskTable, groupPicker, groupCreateDialog, groupRenameDialog},
   data () {
     return {
-      tasks: [],
+      groups: [],
+      groupChoices: [],
       hosts: [],
+      groupStates: {},
+      expandedGroups: [],
+      selection: {},
+      selectedGroup: '',
       taskTotal: 0,
-      searchParams: {
-        page_size: 20,
-        page: 1,
-        id: '',
-        protocol: '',
-        name: '',
-        tag: '',
-        host_id: '',
-        status: ''
-      },
-      isAdmin: this.$store.getters.user.isAdmin,
-      protocolList: [
-        {
-          value: '1',
-          label: 'http'
-        },
-        {
-          value: '2',
-          label: 'shell'
-        }
-      ],
-      statusList: [
-        {
-          value: '2',
-          label: '激活'
-        },
-        {
-          value: '1',
-          label: '停止'
-        }
-      ]
+      loadingGroups: false,
+      groupError: false,
+      groupRequest: 0,
+      choicesRequest: 0,
+      moveDialog: false,
+      moveGroup: '',
+      savingGroup: false,
+      createDialog: false,
+      renameDialog: false,
+      renameTarget: '',
+      deleteDialog: false,
+      deleteTarget: null,
+      deleteTasks: false,
+      deletingGroup: false,
+      deleteLoading: false,
+      deleteRequest: 0,
+      searchParams: {id: '', name: '', protocol: '', host_id: '', status: ''},
+      isAdmin: this.$store.getters.user.isAdmin
     }
   },
-  components: {taskSidebar},
+  computed: {
+    namedGroupChoices () { return prepareGroups(this.groupChoices).filter(group => group.name) },
+    selectedIDs () {
+      return Array.from(new Set(Object.keys(this.selection).reduce((ids, key) => ids.concat(this.selection[key]), [])))
+    }
+  },
   created () {
-    const hostId = this.$route.query.host_id
-    if (hostId) {
-      this.searchParams.host_id = hostId
-    }
-
-    this.search()
-  },
-  filters: {
-    formatLevel (value) {
-      if (value === 1) {
-        return '主任务'
-      }
-      return '子任务'
-    },
-    formatTimeout (value) {
-      if (value > 0) {
-        return value + '秒'
-      }
-      return '不限制'
-    },
-    formatRetryTimesInterval (value) {
-      if (value > 0) {
-        return value + '秒'
-      }
-      return '系统默认'
-    },
-    formatMulti (value) {
-      if (value > 0) {
-        return '否'
-      }
-      return '是'
-    }
+    if (this.$route.query.host_id) this.searchParams.host_id = this.$route.query.host_id
+    taskService.hosts(hosts => { this.hosts = hosts || [] })
+    this.loadChoices()
+    this.loadGroups()
   },
   methods: {
-    changeStatus (item) {
-      if (item.status) {
-        taskService.enable(item.id)
-      } else {
-        taskService.disable(item.id)
-      }
+    openRenameGroup (group) {
+      if (!this.isAdmin || !group.name) return
+      this.renameTarget = group.name
+      this.renameDialog = true
     },
-    formatProtocol (row, col) {
-      if (row[col.property] === 2) {
-        return 'shell'
-      }
-      if (row.http_method === 1) {
-        return 'http-get'
-      }
-      return 'http-post'
+    groupRenamed ({oldName, name}) {
+      const oldKey = groupKey(oldName)
+      const newKey = groupKey(name)
+      if (this.selectedGroup === oldKey) this.selectedGroup = newKey
+      if (this.moveGroup === oldName) this.moveGroup = name
+      this.expandedGroups = this.expandedGroups.map(key => key === oldKey ? newKey : key)
+      this.selection = {}
+      this.groupStates = {}
+      this.loadChoices()
+      this.loadGroups()
     },
-    changePage (page) {
-      this.searchParams.page = page
-      this.search()
+    groupCreated () {
+      this.loadChoices()
+      this.loadGroups()
     },
-    changePageSize (pageSize) {
-      this.searchParams.page_size = pageSize
-      this.search()
-    },
-    search (callback = null) {
-      taskService.list(this.searchParams, (tasks, hosts) => {
-        this.tasks = tasks.data
-        this.taskTotal = tasks.total
-        this.hosts = hosts
-        if (callback) {
-          callback()
-        }
-      })
-    },
-    runTask (item) {
-      this.$appConfirm(() => {
-        taskService.run(item.id, () => {
-          this.$message.success('任务已开始执行')
-        })
-      }, true)
-    },
-    remove (item) {
-      this.$appConfirm(() => {
-        taskService.remove(item.id, () => {
+    openDeleteGroup (group) {
+      if (!this.isAdmin || !group.name) return
+      this.deleteTasks = false
+      this.deleteTarget = null
+      this.deleteDialog = true
+      this.deleteLoading = true
+      const request = ++this.deleteRequest
+      taskService.groups({tag: group.name}, groups => {
+        if (request !== this.deleteRequest || !this.deleteDialog) return
+        this.deleteLoading = false
+        const target = (groups || []).find(item => item.name === group.name)
+        if (!target) {
+          this.deleteDialog = false
+          this.$message.error('分组已不存在，请刷新后重试')
           this.refresh()
-        })
+          return
+        }
+        this.deleteTarget = {name: target.name, total: Number(target.total)}
+      }, () => {
+        if (request !== this.deleteRequest) return
+        this.deleteLoading = false
+        this.deleteDialog = false
       })
     },
-    jumpToLog (item) {
-      this.$router.push(`/task/log?task_id=${item.id}`)
+    confirmDeleteGroup () {
+      if (!this.deleteTarget || this.deleteLoading || this.deletingGroup) return
+      const {name, total} = this.deleteTarget
+      this.deletingGroup = true
+      taskService.deleteGroup(name, this.deleteTasks, total, () => {
+        this.deletingGroup = false
+        this.deleteDialog = false
+        if (this.selectedGroup === groupKey(name)) this.selectedGroup = ''
+        if (this.moveGroup === name) this.moveGroup = ''
+        this.selection = {}
+        this.groupStates = {}
+        this.expandedGroups = this.deleteTasks ? [] : ['ungrouped']
+        this.$message.success(this.deleteTasks ? '分组及组内任务已删除' : '分组已删除，任务已移到未分组')
+        this.loadChoices()
+        this.loadGroups()
+      }, () => {
+        this.deletingGroup = false
+        this.deleteTarget = null
+        this.deleteDialog = false
+        this.refresh()
+      })
+    },
+    loadChoices () {
+      const request = ++this.choicesRequest
+      taskService.groups({}, groups => {
+        if (request === this.choicesRequest) this.groupChoices = groups || []
+      })
+    },
+    queryFor (key) { return Object.assign({}, this.searchParams, groupQuery(key)) },
+    loadGroups (callback) {
+      const request = ++this.groupRequest
+      this.loadingGroups = true
+      this.groupError = false
+      taskService.groups(this.queryFor(this.selectedGroup), groups => {
+        if (request !== this.groupRequest) return
+        this.groups = prepareGroups(groups)
+        this.taskTotal = this.groups.reduce((total, group) => total + group.total, 0)
+        this.groups.forEach(group => {
+          if (!this.groupStates[group.key]) this.$set(this.groupStates, group.key, {tasks: [], total: 0, page: 1, pageSize: 20, loaded: false, loading: false, error: false, request: 0})
+          const state = this.groupStates[group.key]
+          state.page = Math.min(state.page, Math.max(1, Math.ceil(group.total / state.pageSize)))
+        })
+        this.expandedGroups = this.expandedGroups.filter(key => this.groups.some(group => group.key === key))
+        this.loadingGroups = false
+        this.expandedGroups.forEach(key => this.loadGroup(this.groups.find(group => group.key === key)))
+        if (callback) callback()
+      }, () => {
+        if (request !== this.groupRequest) return
+        this.loadingGroups = false
+        this.groupError = true
+      })
+    },
+    openGroups (keys) {
+      keys.forEach(key => {
+        const state = this.groupStates[key]
+        if (state && !state.loaded && !state.loading) this.loadGroup(this.groups.find(group => group.key === key))
+      })
+    },
+    loadGroup (group) {
+      if (!group) return
+      const state = this.groupStates[group.key]
+      const request = ++state.request
+      state.loading = true
+      state.error = false
+      this.selectTasks(group.key, [])
+      const query = Object.assign(this.queryFor(group.key), {page: state.page, page_size: state.pageSize})
+      taskService.groupTasks(query, result => {
+        if (this.groupStates[group.key] !== state || request !== state.request) return
+        state.tasks = result.data || []
+        state.total = Number(result.total || 0)
+        state.loaded = true
+        state.loading = false
+      }, () => {
+        if (this.groupStates[group.key] !== state || request !== state.request) return
+        state.loading = false
+        state.error = true
+      })
+    },
+    changeGroupPage (group, page) { this.groupStates[group.key].page = page; this.loadGroup(group) },
+    changeGroupSize (group, size) { this.groupStates[group.key].pageSize = size; this.groupStates[group.key].page = 1; this.loadGroup(group) },
+    selectTasks (key, tasks) { this.$set(this.selection, key, tasks.map(task => task.id)) },
+    search () {
+      this.expandedGroups = []
+      this.groupStates = {}
+      this.selection = {}
+      this.loadGroups()
     },
     refresh () {
-      this.search(() => {
-        this.$message.success('刷新成功')
-      })
+      this.selection = {}
+      this.loadChoices()
+      this.loadGroups(() => this.$message.success('刷新成功'))
     },
-    toEdit (item) {
-      let path = ''
-      if (item === null) {
-        path = '/task/create'
-      } else {
-        path = `/task/edit/${item.id}`
-      }
-      this.$router.push(path)
+    assignGroup () {
+      let name
+      try { name = normalizeGroupName(this.moveGroup) } catch (error) { this.$message.error(error.message); return }
+      const ids = this.selectedIDs
+      if (!ids.length) return
+      this.savingGroup = true
+      taskService.assignGroup(ids, name, () => {
+        this.savingGroup = false
+        this.moveDialog = false
+        this.selection = {}
+        this.selectedGroup = ''
+        this.expandedGroups = [groupKey(name)]
+        this.$message.success('任务已移入分组')
+        this.loadChoices()
+        this.loadGroups()
+      }, () => { this.savingGroup = false })
+    },
+    changeStatus (task) {
+      const method = task.status ? 'enable' : 'disable'
+      taskService[method](task.id)
+    },
+    runTask (task) {
+      this.$appConfirm(() => taskService.run(task.id, () => this.$message.success('任务已开始执行')), true)
+    },
+    remove (task) {
+      this.$appConfirm(() => taskService.remove(task.id, () => this.refresh()))
+    },
+    jumpToLog (task) { this.$router.push(`/task/log?task_id=${task.id}`) },
+    toEdit (task, group) {
+      const path = task ? `/task/edit/${task.id}` : '/task/create'
+      this.$router.push(!task && group ? {path, query: {group: group.name}} : path)
     }
   }
 }
 </script>
+
 <style scoped>
-  .demo-table-expand {
-    font-size: 0;
-  }
-  .demo-table-expand label {
-    width: 90px;
-    color: #99a9bf;
-  }
-  .demo-table-expand .el-form-item {
-    margin-right: 0;
-    margin-bottom: 0;
-    width: 50%;
-  }
+.group-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.group-toolbar .el-button { margin-left: 0; }
+.group-summary { margin-right: auto; color: #606266; }
+.group-hint { color: #909399; font-size: 13px; line-height: 1.7; margin: 10px 0; }
+.group-overview { min-height: 80px; }
+.group-title { display: flex; flex: 1; min-width: 0; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; line-height: 1.6; }
+.group-title strong { overflow-wrap: anywhere; }
+.group-title i { color: #409eff; font-size: 18px; }
+.group-title .group-delete-button { color: #f56c6c; }
+.group-content { min-height: 60px; padding: 12px; }
+.group-content .el-pagination { margin-top: 12px; }
+.group-empty { padding: 28px; text-align: center; color: #909399; }
+.group-delete-body { min-height: 160px; }
+.group-delete-choice { margin: 16px 0; }
+.group-delete-choice .group-hint { margin: 6px 0 0 24px; }
+@media (max-width: 900px) {
+  .group-summary { flex-basis: 100%; margin-bottom: 4px; }
+}
 </style>

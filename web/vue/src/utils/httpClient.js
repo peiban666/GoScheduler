@@ -3,6 +3,7 @@ import {Message} from 'element-ui'
 import router from '../router/index'
 import store from '../store/index'
 import Qs from 'qs'
+import {normalizePageResponse, requireObjectResponse} from './responseData'
 
 const errorMessage = '加载失败, 请稍后再试'
 // 成功状态码
@@ -36,9 +37,12 @@ axios.interceptors.response.use(data => {
   return Promise.reject(error)
 })
 
-function handle (promise, next) {
-  promise.then((res) => successCallback(res, next))
-    .catch((error) => failureCallback(error))
+function handle (promise, next, failed) {
+  promise.then((res) => successCallback(res, next, failed))
+    .catch((error) => {
+      failureCallback(error)
+      if (failed) failed(error)
+    })
 }
 
 function checkResponseCode (code, msg) {
@@ -62,8 +66,9 @@ function checkResponseCode (code, msg) {
   return true
 }
 
-function successCallback (res, next) {
+function successCallback (res, next, failed) {
   if (!checkResponseCode(res.data.code, res.data.message)) {
+    if (failed) failed(new Error(res.data.message))
     return
   }
   if (!next) {
@@ -79,9 +84,17 @@ function failureCallback (error) {
 }
 
 export default {
-  get (uri, params, next) {
+  getPage (uri, params, next, failed) {
+    handle(axios.get(uri, {params}), data => next(normalizePageResponse(data)), failed)
+  },
+
+  getObject (uri, params, next, failed) {
+    handle(axios.get(uri, {params}), data => next(requireObjectResponse(data)), failed)
+  },
+
+  get (uri, params, next, failed) {
     const promise = axios.get(uri, {params})
-    handle(promise, next)
+    handle(promise, next, failed)
   },
 
   batchGet (uriGroup, next) {
@@ -106,7 +119,7 @@ export default {
     })).catch((error) => failureCallback(error))
   },
 
-  post (uri, data, next) {
+  post (uri, data, next, failed) {
     const promise = axios.post(uri, Qs.stringify(data), {
       headers: {
         post: {
@@ -114,6 +127,6 @@ export default {
         }
       }
     })
-    handle(promise, next)
+    handle(promise, next, failed)
   }
 }

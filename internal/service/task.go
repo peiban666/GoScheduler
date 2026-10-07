@@ -8,8 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gaggad/goscheduler/internal/util"
-
 	"github.com/gaggad/goscheduler/internal/models"
 	"github.com/gaggad/goscheduler/internal/modules/app"
 	"github.com/gaggad/goscheduler/internal/modules/httpclient"
@@ -17,6 +15,7 @@ import (
 	"github.com/gaggad/goscheduler/internal/modules/notify"
 	rpcClient "github.com/gaggad/goscheduler/internal/modules/rpc/client"
 	pb "github.com/gaggad/goscheduler/internal/modules/rpc/proto"
+	"github.com/gaggad/goscheduler/internal/modules/schedule"
 	"github.com/jakecoffman/cron"
 )
 
@@ -160,13 +159,13 @@ func (task Task) Add(taskModel models.Task) {
 		return
 	}
 
-	cronName := strconv.Itoa(taskModel.Id)
-	err := util.PanicToError(func() {
-		serviceCron.AddFunc(taskModel.Spec, taskFunc, cronName)
-	})
+	parsedSchedule, err := schedule.Parse(taskModel.Spec)
 	if err != nil {
 		logger.Error("添加任务到调度器失败#", err)
+		return
 	}
+	// A task always owns one cron entry, even with multiple execution times.
+	serviceCron.Schedule(parsedSchedule, taskFunc, strconv.Itoa(taskModel.Id))
 }
 
 func (task Task) NextRunTime(taskModel models.Task) time.Time {

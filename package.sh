@@ -180,7 +180,7 @@ run() {
 package_goscheduler() {
     BINARY_NAME='goscheduler'
     MAIN_FILE="./cmd/goscheduler/goscheduler.go"
-    INCLUDE_FILE=()
+    INCLUDE_FILE=(LICENSE README.md CHANGELOG.md)
 
 
     run
@@ -189,7 +189,7 @@ package_goscheduler() {
 package_goscheduler_node() {
     BINARY_NAME='goscheduler-node'
     MAIN_FILE="./cmd/node/node.go"
-    INCLUDE_FILE=()
+    INCLUDE_FILE=(LICENSE README.md CHANGELOG.md)
 
     run
 }

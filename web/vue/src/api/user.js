@@ -2,7 +2,7 @@ import httpClient from '../utils/httpClient'
 
 export default {
   list (query, callback) {
-    httpClient.get('/user', {}, callback)
+    httpClient.getPage('/user', query, callback)
   },
 
   detail (id, callback) {

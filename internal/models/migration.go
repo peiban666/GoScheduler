@@ -72,6 +72,7 @@ func (migration *Migration) Upgrade(oldVersionId int) {
 	}
 
 	session := Db.NewSession()
+	defer session.Close()
 	err := session.Begin()
 	if err != nil {
 		logger.Fatalf("开启事务失败-%s", err.Error())
@@ -242,9 +243,19 @@ func (migration *Migration) upgradeFor154(session *xorm.Session) error {
 	logger.Info("开始升级到v1.5.4")
 
 	tableName := TablePrefix + "task"
+	// Upstream installations can report version 1.5 while already including
+	// request_body. Preserve their data and avoid adding the same column twice.
+	exists, err := Db.Dialect().IsColumnExist(tableName, "request_body")
+	if err != nil {
+		return err
+	}
+	if exists {
+		logger.Info("request_body字段已存在，保留现有数据")
+		return nil
+	}
 	sql := fmt.Sprintf(
-		"alter table %s add column request_body text after command", tableName)
-	_, err := session.Exec(sql)
+		"ALTER TABLE %s ADD COLUMN request_body TEXT", Db.Quote(tableName))
+	_, err = session.Exec(sql)
 	if err != nil {
 		return err
 	}

@@ -1,12 +1,12 @@
 <template>
-  <el-container>
-    <el-header>
+  <el-container class="app-layout">
+    <el-header class="app-header" height="auto">
       <app-header></app-header>
       <app-nav-menu></app-nav-menu>
     </el-header>
-    <el-main >
+    <el-main class="app-body">
       <div id="main-container" v-cloak>
-        <router-view/>
+        <router-view :key="$route.fullPath"/>
       </div>
     </el-main>
     <el-footer>
@@ -20,12 +20,10 @@ import installService from './api/install'
 import appHeader from './components/common/header.vue'
 import appNavMenu from './components/common/navMenu.vue'
 import appFooter from './components/common/footer.vue'
+import './styles/responsive.css'
 
 export default {
   name: 'App',
-  data () {
-    return {}
-  },
   created () {
     installService.status((data) => {
       if (!data) {
@@ -59,10 +57,6 @@ export default {
   .el-main {
     padding:0;
     margin:0;
-  }
-  #main-container .el-main {
-    height: calc(100vh - 116px);
-    margin:20px 20px 0 20px;
   }
   .el-aside .el-menu {
     height: 100%;

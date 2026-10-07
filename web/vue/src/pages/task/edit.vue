@@ -2,7 +2,7 @@
   <el-container >
     <task-sidebar></task-sidebar>
     <el-main>
-      <el-form ref="form" :model="form" :rules="formRules" label-width="180px">
+      <el-form ref="form" :model="form" :rules="formRules" label-width="180px" class="task-edit-form">
         <el-input v-model="form.id" type="hidden"></el-input>
         <el-row>
           <el-col :span="12">
@@ -11,8 +11,8 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="标签">
-              <el-input v-model.trim="form.tag" placeholder="通过标签将任务分组"></el-input>
+            <el-form-item label="任务分组" prop="tag">
+              <group-picker v-model="form.tag" :groups="taskGroups" @created="refreshTaskGroups"></group-picker>
             </el-form-item>
           </el-col>
         </el-row>
@@ -64,10 +64,9 @@
           </el-col>
         </el-row>
         <el-row v-if="form.level === 1">
-          <el-col :span="12">
-            <el-form-item label="crontab表达式" prop="spec">
-              <el-input v-model.trim="form.spec"
-                        placeholder="秒 分 时 天 月 周"></el-input>
+          <el-col :span="20">
+            <el-form-item label="执行时间" prop="spec">
+              <schedule-picker v-model="form.spec"></schedule-picker>
             </el-form-item>
           </el-col>
         </el-row>
@@ -236,6 +235,17 @@
               </el-select>
             </el-form-item>
           </el-col>
+          <el-col :span="8" v-if="form.notify_status !== 1 && form.notify_type === 4">
+            <el-form-item label="发送 Webhook">
+              <el-select key="notify-webhook" v-model="selectedWebhookIds" filterable multiple placeholder="请选择 Webhook">
+                <el-option v-for="item in webhooks" :key="item.id"
+                  :label="item.name + ' · ' + webhookProviderLabel(item.provider)" :value="item.id"></el-option>
+              </el-select>
+              <div v-if="webhooks.length === 0" class="webhook-empty">
+                请先在<router-link to="/system/notification/webhook">通知配置</router-link>中新建 Webhook
+              </div>
+            </el-form-item>
+          </el-col>
         </el-row>
         <el-row v-if="form.notify_status === 4">
           <el-col :span="12">
@@ -268,8 +278,12 @@
 
 <script>
 import taskSidebar from './sidebar'
+import schedulePicker from '../../components/task/schedulePicker'
+import groupPicker from '../../components/task/groupPicker'
+import {normalizeGroupName} from '../../utils/taskGroups'
 import taskService from '../../api/task'
 import notificationService from '../../api/notification'
+import {WEBHOOK_PROVIDERS} from '../../utils/webhook'
 
 export default {
   name: 'task-edit',
@@ -282,7 +296,7 @@ export default {
         level: 1,
         dependency_status: 1,
         dependency_task_id: '',
-        spec: '',
+        spec: '0 30 7 * * *',
         protocol: 2,
         http_method: 1,
         command: '',
@@ -299,11 +313,22 @@ export default {
         remark: ''
       },
       formRules: {
+        tag: [{
+          validator (rule, value, callback) {
+            try {
+              normalizeGroupName(value)
+              callback()
+            } catch (error) {
+              callback(error)
+            }
+          },
+          trigger: 'change'
+        }],
         name: [
           {required: true, message: '请输入任务名称', trigger: 'blur'}
         ],
         spec: [
-          {required: true, message: '请输入crontab表达式', trigger: 'blur'}
+          {required: true, message: '请配置有效的执行时间', trigger: 'change'}
         ],
         command: [
           {required: true, message: '请输入命令', trigger: 'blur'}
@@ -404,11 +429,14 @@ export default {
         }
       ],
       hosts: [],
+      taskGroups: [],
       mailUsers: [],
       slackChannels: [],
+      webhooks: [],
       selectedHosts: [],
       selectedMailNotifyIds: [],
-      selectedSlackNotifyIds: []
+      selectedSlackNotifyIds: [],
+      selectedWebhookIds: []
     }
   },
   computed: {
@@ -420,23 +448,25 @@ export default {
       return '请输入shell命令'
     }
   },
-  components: {taskSidebar},
+  components: {taskSidebar, schedulePicker, groupPicker},
   created () {
     const id = this.$route.params.id
+    if (!id && typeof this.$route.query.group === 'string') this.form.tag = this.$route.query.group
 
-    taskService.detail(id, (taskData, hosts) => {
+    taskService.detail(id, (taskData, hosts, groups) => {
       if (id && !taskData) {
         this.$message.error('数据不存在')
         this.cancel()
         return
       }
       this.hosts = hosts || []
+      this.taskGroups = groups || []
       if (!taskData) {
         return
       }
       this.form.id = taskData.id
       this.form.name = taskData.name
-      this.form.tag = taskData.tag
+      this.form.tag = taskData.tag || ''
       this.form.level = taskData.level
       if (taskData.dependency_status) {
         this.form.dependency_status = taskData.dependency_status
@@ -477,6 +507,8 @@ export default {
           notifyReceiverIds.forEach((v) => {
             this.selectedSlackNotifyIds.push(parseInt(v))
           })
+        } else if (this.form.notify_type === 4) {
+          this.selectedWebhookIds = this.form.notify_receiver_id ? notifyReceiverIds.map(Number) : [0]
         }
       }
     })
@@ -488,8 +520,16 @@ export default {
     notificationService.slack((data) => {
       this.slackChannels = data.channels
     })
+    notificationService.webhookOptions(data => { this.webhooks = data || [] })
   },
   methods: {
+    webhookProviderLabel (provider) {
+      const option = WEBHOOK_PROVIDERS.find(item => item.value === provider)
+      return option ? option.label : '通用'
+    },
+    refreshTaskGroups () {
+      taskService.groups({}, groups => { this.taskGroups = groups || [] })
+    },
     submit () {
       this.$refs['form'].validate((valid) => {
         if (!valid) {
@@ -508,12 +548,17 @@ export default {
             this.$message.error('请选择Slack Channel')
             return false
           }
+          if (this.form.notify_type === 4 && this.selectedWebhookIds.length === 0) {
+            this.$message.error('请选择至少一个 Webhook')
+            return false
+          }
         }
 
         this.save()
       })
     },
     save () {
+      this.form.tag = normalizeGroupName(this.form.tag)
       if (this.form.protocol === 2 && this.selectedHosts.length > 0) {
         this.form.host_id = this.selectedHosts.join(',')
       }
@@ -522,6 +567,9 @@ export default {
       }
       if (this.form.notify_status > 1 && this.form.notify_type === 3) {
         this.form.notify_receiver_id = this.selectedSlackNotifyIds.join(',')
+      }
+      if (this.form.notify_status > 1 && this.form.notify_type === 4) {
+        this.form.notify_receiver_id = this.selectedWebhookIds.join(',')
       }
       taskService.update(this.form, () => {
         this.$router.push('/task')

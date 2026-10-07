@@ -1,5 +1,5 @@
 <template>
-  <el-aside width="8%">
+  <el-aside class="app-sidebar" width="136px">
     <el-menu
       :default-active="currentRoute"
       mode="vertical"

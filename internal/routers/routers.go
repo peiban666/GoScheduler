@@ -82,6 +82,11 @@ func Register(m *macaron.Macaron) {
 
 	// 定时任务
 	m.Group("/task", func() {
+		m.Get("/groups", task.Groups)
+		m.Post("/group/create", task.CreateGroup)
+		m.Post("/group/rename", task.RenameGroup)
+		m.Post("/group/delete", task.DeleteGroup)
+		m.Post("/group", task.AssignGroup)
 		m.Post("/store", binding.Bind(task.TaskForm{}), task.Store)
 		m.Get("/:id", task.Detail)
 		m.Get("", task.Index)
@@ -120,7 +125,12 @@ func Register(m *macaron.Macaron) {
 		})
 		m.Group("/webhook", func() {
 			m.Get("", manage.WebHook)
+			m.Get("/list", manage.WebhookList)
+			m.Get("/options", manage.WebhookOptions)
 			m.Post("/update", manage.UpdateWebHook)
+			m.Post("/store", manage.StoreWebhook)
+			m.Post("/remove/:id", manage.RemoveWebhook)
+			m.Post("/test", manage.TestWebhook)
 		})
 		m.Get("/login-log", loginlog.Index)
 	})
@@ -252,6 +262,8 @@ func urlAuth(ctx *macaron.Context) {
 		"",
 		"/install/status",
 		"/task",
+		"/task/groups",
+		"/system/webhook/options",
 		"/task/log",
 		"/host",
 		"/host/all",

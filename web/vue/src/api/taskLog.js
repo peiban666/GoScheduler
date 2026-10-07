@@ -2,7 +2,7 @@ import httpClient from '../utils/httpClient'
 
 export default {
   list (query, callback) {
-    httpClient.get('/task/log', query, callback)
+    httpClient.getPage('/task/log', query, callback)
   },
 
   clear (callback) {
