@@ -64,33 +64,64 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
+          cache: npm
+          cache-dependency-path: web/vue/package-lock.json
 
       - name: Test release packaging
         run: python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
 
       - name: Install frontend dependencies
+        timeout-minutes: 5
         working-directory: source/web/vue
-        run: npm install --no-audit --no-fund
+        env:
+          COMPATIBLE_LOCKFILE: ${{ github.workspace }}/web/vue/package-lock.json
+        run: |
+          # v1.6 predates the npm lockfile. Use a tested resolution of the same
+          # dependency ranges instead of npm importing the 2018 Yarn versions.
+          # Future tagged lockfiles remain authoritative and are not replaced.
+          if [ ! -f package-lock.json ]; then
+            cp "$COMPATIBLE_LOCKFILE" package-lock.json
+          fi
+          npm ci --no-audit --no-fund
 
-      - name: Test and build the production frontend
+      - name: Verify the Vue test runner exits naturally
+        env:
+          FRONTEND_TEST_DIR: ${{ github.workspace }}/source/web/vue
+        run: python3 -m unittest discover -s .github/scripts -p 'test_frontend_setup.py' -v
+
+      - name: Test the tagged frontend
+        timeout-minutes: 3
+        working-directory: source/web/vue
+        env:
+          TEST_SETUP: ${{ github.workspace }}/web/vue/build/node-compat.cjs
+        run: |
+          # Keep old tags unchanged while applying the DOM-free test setup.
+          node --require "$TEST_SETUP" --test --test-reporter=spec \
+            --test-timeout=30000 test/*.test.mjs
+
+      - name: Build the production frontend
+        timeout-minutes: 5
         working-directory: source/web/vue
         env:
           NODE_OPTIONS: --openssl-legacy-provider
+          BUILD_SETUP: ${{ github.workspace }}/web/vue/build/node-compat.cjs
         run: |
-          npm test
-          npm run build
+          node --require "$BUILD_SETUP" build/build.js
           npm run test:assets
 
       - name: Embed the frontend and test the backend
+        timeout-minutes: 5
         working-directory: source
         run: |
           go run github.com/rakyll/statik -src=web/vue/dist -dest=internal -f
-          go test ./...
+          go test -timeout 2m ./...
 
       - name: Build, verify and package Windows, Linux and macOS binaries
+        timeout-minutes: 10
         env:
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
           SOURCE_COMMIT: ${{ steps.version.outputs.commit }}
+          RELEASE_TOOLING_COMMIT: ${{ github.sha }}
         run: |
           python3 .github/scripts/package_release.py \
             --source source --output dist \

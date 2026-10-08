@@ -119,6 +119,8 @@ gocron、goscheduler 使用的都是 MIT LICENSE
 - 压缩包附带 MIT 许可证、README、更新日志及保留数据的升级说明。
 - 附带 `SHA256SUMS.txt` 及 `BUILD-INFO.json`，记录校验值和构建来源。
 - 发布文件只包含程序及明确列出的文档，不包含本机数据库、配置或通知密钥。
+- 前端通过 `npm ci` 安装锁定依赖；旧 `v1.6` 标签没有 npm 锁文件时采用发布工具中的兼容锁文件，
+  保持应用源代码标签不变，并在构建信息中记录依赖版本和锁文件校验值。
 
 ## 版本升级
 ### 从上游版本升级并保留数据
@@ -192,7 +194,7 @@ go build -o bin/goscheduler-node ./cmd/node
 
 ```shell
 cd web/vue
-npm install
+npm ci
 npm test
 NODE_OPTIONS=--openssl-legacy-provider npm run build
 npm run test:assets

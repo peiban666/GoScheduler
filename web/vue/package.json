@@ -8,8 +8,8 @@
     "dev": "webpack-dev-server --inline --progress --config build/webpack.dev.conf.js",
     "start": "npm run dev",
     "lint": "eslint --ext .js,.vue src",
-    "build": "node build/build.js",
-    "test": "node --test test/schedule.test.mjs test/taskGroups.test.mjs test/responseData.test.mjs test/webhook.test.mjs test/responsive.test.mjs",
+    "build": "node --require ./build/node-compat.cjs build/build.js",
+    "test": "node --require ./build/node-compat.cjs --test test/schedule.test.mjs test/taskGroups.test.mjs test/responseData.test.mjs test/webhook.test.mjs test/responsive.test.mjs",
     "test:assets": "node --test test/assets.test.cjs"
   },
   "dependencies": {

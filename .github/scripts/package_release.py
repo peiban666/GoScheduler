@@ -126,6 +126,16 @@ def main():
             "timezone": "Asia/Shanghai", "go": subprocess.check_output(["go", "version"], text=True).strip(),
             "targets": [f"{platform}/amd64" for platform in PLATFORMS],
             "frontend": "production frontend rebuilt, tested and embedded by GitHub Actions"}
+    lockfile = source / "web/vue/package-lock.json"
+    if lockfile.exists():
+        lock = json.loads(lockfile.read_text(encoding="utf-8"))
+        info["frontend_lockfile_sha256"] = hashlib.sha256(lockfile.read_bytes()).hexdigest()
+        info["frontend_dependencies"] = {
+            package: lock["packages"]["node_modules/" + package]["version"]
+            for package in ("vue", "vue-template-compiler", "element-ui", "webpack")
+        }
+    if os.environ.get("RELEASE_TOOLING_COMMIT"):
+        info["release_tooling_commit"] = os.environ["RELEASE_TOOLING_COMMIT"]
     (assets / "BUILD-INFO.json").write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
     write_checksums(assets)
     changelog = (source / "CHANGELOG.md").read_text(encoding="utf-8")
