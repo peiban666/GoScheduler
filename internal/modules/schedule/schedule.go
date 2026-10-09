@@ -59,14 +59,19 @@ func Parse(spec string) (result cron.Schedule, err error) {
 		if _, interval := parsed.(cron.ConstantDelaySchedule); interval && len(expressions) > 1 {
 			return nil, fmt.Errorf("@every 间隔规则请单独使用，多个时间点请使用六字段 Cron 表达式")
 		}
-		// The visual minute picker saves @every Nm. Align these schedules to
-		// second 00 while retaining equal N-minute gaps across hour boundaries.
-		// Advanced second-based intervals such as @every 60s keep their meaning.
+		// Earlier visual pickers saved @every Nm. Existing minute rules up to
+		// one hour now use the same minute-00 calendar steps as the new picker,
+		// without rewriting task data or anchoring execution to save/restart time.
+		// Longer legacy durations and advanced second-based rules keep their meaning.
 		fields := strings.Fields(expression)
 		if len(fields) == 2 && fields[0] == "@every" && strings.HasSuffix(fields[1], "m") {
 			minutes, parseErr := strconv.ParseUint(strings.TrimSuffix(fields[1], "m"), 10, 64)
 			if delay, ok := parsed.(cron.ConstantDelaySchedule); ok && parseErr == nil && minutes > 0 {
-				parsed = MinuteIntervalSchedule{Delay: delay.Delay}
+				if minutes <= 60 {
+					parsed = cron.Parse(fmt.Sprintf("0 */%d * * * *", minutes))
+				} else {
+					parsed = MinuteIntervalSchedule{Delay: delay.Delay}
+				}
 			}
 		}
 		schedules = append(schedules, parsed)

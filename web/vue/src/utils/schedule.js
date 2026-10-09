@@ -1,6 +1,7 @@
 // The existing task/task_log spec columns both have a 64-character limit.
 export const MAX_SPEC_LENGTH = 64
-export const MAX_INTERVAL_MINUTES = 525600
+export const MAX_INTERVAL_MINUTES = 60
+export const MAX_INTERVAL_HOURS = 24
 
 function expressions (spec) {
   return String(spec || '').trim().split(/[;\r\n]+/).map(line => line.trim().split(/\s+/).join(' ')).filter(Boolean)
@@ -11,10 +12,12 @@ function integer (value, max) {
 }
 
 export function parseSchedule (spec) {
-  const state = {mode: 'advanced', minute: 0, intervalMinutes: 1, times: ['07:30'], advanced: spec || ''}
+  const state = {mode: 'advanced', minute: 0, intervalMinutes: 1, intervalHours: 1, times: ['07:30'], advanced: spec || ''}
   const lines = expressions(spec)
   if (lines.length === 1) {
     const fields = lines[0].split(' ')
+    // This project's five-field form omits weekday, not seconds.
+    if (fields.length === 5) fields.push('*')
     const interval = lines[0].match(/^@every (\d+)m$/)
     if (interval && integer(interval[1], MAX_INTERVAL_MINUTES) && Number(interval[1]) > 0) {
       return Object.assign(state, {mode: 'interval', intervalMinutes: Number(interval[1])})
@@ -24,6 +27,18 @@ export function parseSchedule (spec) {
     }
     if (lines[0] === '0 * * * * *') {
       return Object.assign(state, {mode: 'minutely'})
+    }
+    const minuteStep = fields[1] && fields[1].match(/^\*\/(\d+)$/)
+    if (fields.length === 6 && fields[0] === '0' && minuteStep &&
+        integer(minuteStep[1], MAX_INTERVAL_MINUTES) && Number(minuteStep[1]) > 0 &&
+        fields.slice(2).join(' ') === '* * * *') {
+      return Object.assign(state, {mode: 'interval', intervalMinutes: Number(minuteStep[1])})
+    }
+    const hourStep = fields[2] && fields[2].match(/^\*\/(\d+)$/)
+    if (fields.length === 6 && fields[0] === '0' && integer(fields[1], 59) && hourStep &&
+        integer(hourStep[1], MAX_INTERVAL_HOURS) && Number(hourStep[1]) > 0 &&
+        fields.slice(3).join(' ') === '* * *') {
+      return Object.assign(state, {mode: 'hourly', minute: Number(fields[1]), intervalHours: Number(hourStep[1])})
     }
     if (fields.length === 6 && fields[0] === '0' && integer(fields[1], 59) && fields.slice(2).join(' ') === '* * * *') {
       return Object.assign(state, {mode: 'hourly', minute: Number(fields[1])})
@@ -35,6 +50,7 @@ export function parseSchedule (spec) {
   const times = []
   for (const line of lines) {
     const fields = line.split(' ')
+    if (fields.length === 5) fields.push('*')
     if (fields.length !== 6 || fields[0] !== '0' || !integer(fields[1], 59) || fields.slice(3).join(' ') !== '* * *') {
       return state
     }
@@ -58,11 +74,15 @@ export function buildSchedule (state) {
     if (!integer(state.intervalMinutes, MAX_INTERVAL_MINUTES) || Number(state.intervalMinutes) < 1) {
       throw new Error(`请输入执行间隔（1–${MAX_INTERVAL_MINUTES} 的整数分钟）`)
     }
-    // A duration keeps equal gaps across hours; */7 Cron minutes would not.
-    spec = `@every ${Number(state.intervalMinutes)}m`
+    // Calendar steps begin at minute 00 each hour, independent of saving.
+    spec = Number(state.intervalMinutes) === 1 ? '0 * * * * *' : `0 */${Number(state.intervalMinutes)} * * * *`
   } else if (state.mode === 'hourly') {
     if (!integer(state.minute, 59)) throw new Error('请选择每小时执行的分钟（0–59）')
-    spec = `0 ${Number(state.minute)} * * * *`
+    const hours = Object.prototype.hasOwnProperty.call(state, 'intervalHours') ? state.intervalHours : 1
+    if (!integer(hours, MAX_INTERVAL_HOURS) || Number(hours) < 1) {
+      throw new Error(`请输入执行间隔（1–${MAX_INTERVAL_HOURS} 的整数小时）`)
+    }
+    spec = `0 ${Number(state.minute)} ${Number(hours) === 1 ? '*' : `*/${Number(hours)}`} * * *`
   } else if (state.mode === 'daily') {
     if (!state.times.length) throw new Error('每天至少添加一个执行时间')
     const groups = {}
@@ -90,8 +110,11 @@ export function buildSchedule (state) {
 export function describeSchedule (spec) {
   const state = parseSchedule(spec)
   if (state.mode === 'minutely') return '每分钟'
-  if (state.mode === 'interval') return `每 ${state.intervalMinutes} 分钟执行一次`
-  if (state.mode === 'hourly') return `每小时 ${String(state.minute).padStart(2, '0')} 分`
+  if (state.mode === 'interval') return `每 ${state.intervalMinutes} 分钟执行一次（从 00 分起）`
+  if (state.mode === 'hourly') {
+    const minute = String(state.minute).padStart(2, '0')
+    return state.intervalHours === 1 ? `每小时 ${minute} 分` : `每 ${state.intervalHours} 小时 ${minute} 分（从 00 时起）`
+  }
   if (state.mode === 'daily') return `每天 ${state.times.join('、')}`
   return expressions(spec).join('；') || '—'
 }

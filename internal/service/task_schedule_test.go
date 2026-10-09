@@ -47,8 +47,8 @@ func TestMinuteIntervalIsOneReplaceableCronEntry(t *testing.T) {
 	if len(entries) != 1 || entries[0].Name != "43" {
 		t.Fatalf("expected one interval entry, got %v", entries)
 	}
-	after := time.Date(2026, 10, 7, 23, 58, 17, 100000000, time.UTC)
-	if next := entries[0].Schedule.Next(after); !next.Equal(after.Truncate(time.Minute).Add(7 * time.Minute)) {
+	after := time.Date(2026, 10, 9, 12, 3, 17, 100000000, time.UTC)
+	if next := entries[0].Schedule.Next(after); !next.Equal(time.Date(2026, 10, 9, 12, 7, 0, 0, time.UTC)) {
 		t.Fatalf("wrong interval execution: %s", next)
 	}
 	task.Spec = "@every 30m"
@@ -57,7 +57,16 @@ func TestMinuteIntervalIsOneReplaceableCronEntry(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatalf("interval edit leaked entries: %v", entries)
 	}
-	if next := entries[0].Schedule.Next(after); !next.Equal(after.Truncate(time.Minute).Add(30 * time.Minute)) {
-		t.Fatalf("interval edit retained old duration: %s", next)
+	if next := entries[0].Schedule.Next(after); !next.Equal(time.Date(2026, 10, 9, 12, 30, 0, 0, time.UTC)) {
+		t.Fatalf("interval edit retained old minute steps: %s", next)
+	}
+	task.Spec = "0 0 */2 * * *"
+	ServiceTask.RemoveAndAdd(task)
+	entries = serviceCron.Entries()
+	if len(entries) != 1 {
+		t.Fatalf("hour interval edit leaked entries: %v", entries)
+	}
+	if next := entries[0].Schedule.Next(after); !next.Equal(time.Date(2026, 10, 9, 14, 0, 0, 0, time.UTC)) {
+		t.Fatalf("hour interval was not anchored at midnight: %s", next)
 	}
 }

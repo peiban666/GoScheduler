@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs'
 
 // Load the ES module without changing the legacy webpack package to type:module.
 const source = readFileSync(new URL('../src/utils/schedule.js', import.meta.url))
-const {buildSchedule, describeSchedule, parseSchedule, MAX_SPEC_LENGTH, MAX_INTERVAL_MINUTES} = await import(`data:text/javascript;base64,${source.toString('base64')}`)
+const {buildSchedule, describeSchedule, parseSchedule, MAX_SPEC_LENGTH, MAX_INTERVAL_MINUTES, MAX_INTERVAL_HOURS} = await import(`data:text/javascript;base64,${source.toString('base64')}`)
 
 test('daily times preserve minute/hour pairs rather than cross-product', () => {
   const state = {mode: 'daily', times: ['07:30', '20:00', '03:00']}
@@ -19,21 +19,44 @@ test('minute/hour modes and old screenshot expressions', () => {
   assert.equal(buildSchedule({mode: 'hourly', minute: 15}), '0 15 * * * *')
   assert.equal(parseSchedule('0 15 * * * *').minute, 15)
   assert.deepEqual(parseSchedule('0 30 13,17 * * *').times, ['13:30', '17:30'])
+  assert.deepEqual(parseSchedule('0 30 17,23 * *').times, ['17:30', '23:30'])
+  assert.deepEqual(parseSchedule('0 0 14,16,20,22 * *').times, ['14:00', '16:00', '20:00', '22:00'])
   assert.deepEqual(parseSchedule('0 50 10 * * *').times, ['10:50'])
 })
 
-test('minute intervals round-trip as durations, not minute-field Cron steps', () => {
-  for (const intervalMinutes of [1, 5, 7, 10, 30, 90, MAX_INTERVAL_MINUTES]) {
-    const spec = `@every ${intervalMinutes}m`
+test('minute intervals round-trip as calendar steps starting at minute 00', () => {
+  for (const intervalMinutes of [1, 5, 7, 10, 30, MAX_INTERVAL_MINUTES]) {
+    const spec = intervalMinutes === 1 ? '0 * * * * *' : `0 */${intervalMinutes} * * * *`
     assert.equal(buildSchedule({mode: 'interval', intervalMinutes}), spec)
     const state = parseSchedule(spec)
-    assert.equal(state.mode, 'interval')
+    assert.equal(state.mode, intervalMinutes === 1 ? 'minutely' : 'interval')
     assert.equal(state.intervalMinutes, intervalMinutes)
     assert.equal(buildSchedule(state), spec)
-    assert.equal(describeSchedule(spec), `每 ${intervalMinutes} 分钟执行一次`)
+    assert.equal(describeSchedule(spec), intervalMinutes === 1 ? '每分钟' : `每 ${intervalMinutes} 分钟执行一次（从 00 分起）`)
+    const legacy = parseSchedule(`@every ${intervalMinutes}m`)
+    assert.equal(legacy.mode, 'interval')
+    assert.equal(buildSchedule(legacy), spec)
   }
-  assert.equal(buildSchedule({mode: 'interval', intervalMinutes: '7'}), '@every 7m')
+  assert.equal(buildSchedule({mode: 'interval', intervalMinutes: '7'}), '0 */7 * * * *')
   assert.equal(parseSchedule('0 * * * * *').mode, 'minutely')
+})
+
+test('hour intervals start at hour 00 and retain selectable minutes', () => {
+  for (const intervalHours of [1, 2, 3, 5, 6, 12, MAX_INTERVAL_HOURS]) {
+    for (const minute of [0, 30, 59]) {
+      const spec = `0 ${minute} ${intervalHours === 1 ? '*' : `*/${intervalHours}`} * * *`
+      const state = {mode: 'hourly', intervalHours, minute}
+      assert.equal(buildSchedule(state), spec)
+      assert.equal(parseSchedule(spec).intervalHours, intervalHours)
+      assert.equal(parseSchedule(spec).minute, minute)
+      assert.equal(buildSchedule(parseSchedule(spec)), spec)
+    }
+  }
+  assert.equal(describeSchedule('0 0 */2 * * *'), '每 2 小时 00 分（从 00 时起）')
+  assert.equal(describeSchedule('0 15 * * * *'), '每小时 15 分')
+  for (const intervalHours of ['', null, 0, -1, 1.5, '1e1', MAX_INTERVAL_HOURS + 1]) {
+    assert.throws(() => buildSchedule({mode: 'hourly', intervalHours, minute: 0}), /整数小时/)
+  }
 })
 
 test('minute intervals reject missing, fractional and out-of-range input', () => {
@@ -48,7 +71,7 @@ test('duplicates are removed and equal-minute times compacted', () => {
 })
 
 test('advanced expressions are not guessed or silently replaced', () => {
-  for (const spec of ['*/5 * * * * *', '0 */7 * * * *', '0 0 7 * * 1-5', '@every 10s', '@every 1h', '@every 5m30s', '@every 0m', '@every 525601m', '30 30 7 * * *', '0 0 24 * * *']) {
+  for (const spec of ['*/5 * * * * *', '0 */61 * * * *', '0 0 */25 * * *', '0 0 7 * * 1-5', '@every 10s', '@every 1h', '@every 5m30s', '@every 0m', '@every 90m', '@every 525601m', '30 30 7 * * *', '0 0 24 * * *']) {
     const state = parseSchedule(spec)
     assert.equal(state.mode, 'advanced')
     assert.equal(buildSchedule(state), spec)
@@ -85,7 +108,7 @@ const require = createRequire(import.meta.url)
 const Vue = require('vue')
 const componentSource = readFileSync(new URL('../src/components/task/schedulePicker.vue', import.meta.url), 'utf8')
 const script = componentSource.match(/<script>([\s\S]*?)<\/script>/)[1].replace(/^import .*$/m, '').replace('export default', 'return')
-const component = new Function('buildSchedule', 'describeSchedule', 'parseSchedule', 'MAX_INTERVAL_MINUTES', script)(buildSchedule, describeSchedule, parseSchedule, MAX_INTERVAL_MINUTES)
+const component = new Function('buildSchedule', 'describeSchedule', 'parseSchedule', 'MAX_INTERVAL_MINUTES', 'MAX_INTERVAL_HOURS', script)(buildSchedule, describeSchedule, parseSchedule, MAX_INTERVAL_MINUTES, MAX_INTERVAL_HOURS)
 
 function picker (spec) {
   const vm = new Vue({...component, propsData: {value: spec}})
@@ -135,19 +158,19 @@ test('component edits intervals and retains them through advanced mode', async (
   const vm = picker('0 30 7 * * *')
   vm.changeMode('interval')
   await Vue.nextTick()
-  assert.equal(vm.value, '@every 1m')
+  assert.equal(vm.value, '0 * * * * *')
   vm.intervalMinutes = 7
   await Vue.nextTick()
-  assert.equal(vm.value, '@every 7m')
+  assert.equal(vm.value, '0 */7 * * * *')
   vm.changeMode('advanced')
   await Vue.nextTick()
-  assert.equal(vm.state.advanced, '@every 7m')
-  vm.state.advanced = '@every 30m'
+  assert.equal(vm.state.advanced, '0 */7 * * * *')
+  vm.state.advanced = '0 */30 * * * *'
   await Vue.nextTick()
   vm.changeMode('interval')
   await Vue.nextTick()
   assert.equal(vm.state.intervalMinutes, 30)
-  assert.equal(vm.value, '@every 30m')
+  assert.equal(vm.value, '0 */30 * * * *')
   vm.$destroy()
 })
 
@@ -164,10 +187,10 @@ test('merged minute control preserves legacy Cron until its interval changes', a
   assert.equal(vm.value, '0 * * * * *')
   vm.intervalMinutes = 5
   await Vue.nextTick()
-  assert.equal(vm.value, '@every 5m')
+  assert.equal(vm.value, '0 */5 * * * *')
   vm.intervalMinutes = 1
   await Vue.nextTick()
-  assert.equal(vm.value, '@every 1m')
+  assert.equal(vm.value, '0 * * * * *')
   vm.$destroy()
 })
 
@@ -185,7 +208,7 @@ test('visual picker hides generated expressions without removing readable summar
   assert.match(template, /v-model="state\.advanced"/)
   for (const spec of ['@every 1m', '0 * * * * *', '0 15 * * * *', '0 0 3,20 * * *\n0 30 7 * * *']) {
     const vm = picker(spec)
-    assert.equal(vm.result.spec, spec)
+    assert.equal(vm.result.spec, spec === '@every 1m' ? '0 * * * * *' : spec)
     assert.ok(vm.description.length > 0)
     vm.$destroy()
   }
@@ -207,11 +230,53 @@ test('component keeps interval mode during empty input and accepts saved interva
   assert.match(vm.result.error, /整数分钟/)
   vm.state.intervalMinutes = 10
   await Vue.nextTick()
-  assert.equal(vm.value, '@every 10m')
-  vm.value = '@every 90m'
+  assert.equal(vm.value, '0 */10 * * * *')
+  vm.value = '0 */30 * * * *'
   await Vue.nextTick()
   assert.equal(vm.state.mode, 'interval')
-  assert.equal(vm.state.intervalMinutes, 90)
-  assert.equal(vm.description, '每 90 分钟执行一次')
+  assert.equal(vm.state.intervalMinutes, 30)
+  assert.equal(vm.description, '每 30 分钟执行一次（从 00 分起）')
+  vm.value = '@every 90m'
+  await Vue.nextTick()
+  assert.equal(vm.state.mode, 'advanced')
+  assert.equal(vm.result.spec, '@every 90m')
+  vm.$destroy()
+})
+
+test('hour picker edits N, previews actual times and survives mode switching', async () => {
+  const vm = picker('0 0 * * * *')
+  vm.state.intervalHours = 2
+  await Vue.nextTick()
+  assert.equal(vm.value, '0 0 */2 * * *')
+  assert.equal(vm.hourExample, '执行时间：00:00、02:00、04:00、06:00、08:00、10:00、12:00、14:00、16:00、18:00、20:00、22:00。')
+  vm.state.minute = 30
+  await Vue.nextTick()
+  assert.equal(vm.value, '0 30 */2 * * *')
+  vm.changeMode('advanced')
+  await Vue.nextTick()
+  vm.changeMode('hourly')
+  await Vue.nextTick()
+  assert.equal(vm.state.intervalHours, 2)
+  assert.equal(vm.state.minute, 30)
+  vm.state.intervalHours = undefined
+  await Vue.nextTick()
+  assert.equal(vm.hourExample, '')
+  assert.equal(vm.value, '')
+  assert.match(vm.result.error, /整数小时/)
+  vm.state.intervalHours = 3
+  await Vue.nextTick()
+  assert.equal(vm.value, '0 30 */3 * * *')
+  vm.$destroy()
+})
+
+test('picker explains calendar boundaries instead of anchoring to current time', () => {
+  assert.doesNotMatch(componentSource, /以当前分钟为起点|跨小时保持相同间隔/)
+  assert.match(componentSource, /从每小时 00 分起计算/)
+  assert.match(componentSource, /从每天 00 时起计算/)
+  assert.match(componentSource, /每 X 小时/)
+  assert.match(componentSource, /跨小时的间隔可能短于/)
+  assert.match(componentSource, /跨天的间隔可能短于/)
+  const vm = picker('0 */5 * * * *')
+  assert.equal(vm.minuteExample, '执行分钟：00、05、10、15、20、25、30、35、40、45、50、55。')
   vm.$destroy()
 })

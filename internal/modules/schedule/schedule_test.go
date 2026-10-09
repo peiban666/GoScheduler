@@ -7,8 +7,8 @@ import (
 	"time"
 )
 
-func TestMinuteIntervalsAcrossHourAndDayBoundaries(t *testing.T) {
-	for _, minutes := range []int{1, 5, 7, 10, 30, 90, 525600} {
+func TestLegacyLongMinuteIntervalsKeepTheirExistingDuration(t *testing.T) {
+	for _, minutes := range []int{90, 525600} {
 		t.Run(fmt.Sprintf("%dm", minutes), func(t *testing.T) {
 			parsed, err := Parse(fmt.Sprintf("@every %dm", minutes))
 			if err != nil {
@@ -29,6 +29,87 @@ func TestMinuteIntervalsAcrossHourAndDayBoundaries(t *testing.T) {
 				want = want.Add(delay)
 			}
 		})
+	}
+}
+
+func TestMinuteStepsStartAtMinuteZeroRegardlessOfSaveTime(t *testing.T) {
+	zone := time.FixedZone("Asia/Shanghai", 8*60*60)
+	for _, minutes := range []int{1, 5, 7, 10, 30, 60} {
+		for _, spec := range []string{fmt.Sprintf("0 */%d * * * *", minutes), fmt.Sprintf("@every %dm", minutes)} {
+			t.Run(spec, func(t *testing.T) {
+				parsed, err := Parse(spec)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, start := range []time.Time{
+					time.Date(2026, 10, 9, 12, 3, 47, 625000000, zone),
+					time.Date(2026, 10, 9, 12, 55, 0, 0, zone),
+					time.Date(2026, 10, 9, 23, 58, 47, 0, zone),
+				} {
+					after := start
+					for tick := 0; tick < 15; tick++ {
+						want := after.Truncate(time.Minute).Add(time.Minute)
+						for want.Minute()%minutes != 0 {
+							want = want.Add(time.Minute)
+						}
+						next := parsed.Next(after)
+						if !next.Equal(want) || next.Second() != 0 || next.Nanosecond() != 0 {
+							t.Fatalf("Next(%s) = %s, want %s", after, next, want)
+						}
+						// Re-registering a schedule at this point must not shift its anchor.
+						restarted, err := Parse(spec)
+						if err != nil || !restarted.Next(after).Equal(next) {
+							t.Fatal("schedule changed on re-registration")
+						}
+						after = next
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestHourStepsStartAtMidnight(t *testing.T) {
+	zone := time.FixedZone("Asia/Shanghai", 8*60*60)
+	for _, hours := range []int{1, 2, 3, 5, 6, 12, 24} {
+		for _, minute := range []int{0, 30, 59} {
+			spec := fmt.Sprintf("0 %d */%d * * *", minute, hours)
+			parsed, err := Parse(spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			after := time.Date(2026, 10, 9, 13, 7, 47, 0, zone)
+			for tick := 0; tick < 10; tick++ {
+				want := after.Truncate(time.Minute).Add(time.Minute)
+				for want.Hour()%hours != 0 || want.Minute() != minute {
+					want = want.Add(time.Minute)
+				}
+				next := parsed.Next(after)
+				if !next.Equal(want) {
+					t.Fatalf("%s Next(%s) = %s, want %s", spec, after, next, want)
+				}
+				after = next
+			}
+		}
+	}
+}
+
+func TestNonDivisorStepsResetAtHourAndDayBoundaries(t *testing.T) {
+	minutes, err := Parse("0 */7 * * * *")
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := time.Date(2026, 10, 9, 12, 56, 0, 0, time.UTC)
+	if next := minutes.Next(after); !next.Equal(after.Add(4 * time.Minute)) {
+		t.Fatalf("minute step did not reset to 13:00: %s", next)
+	}
+	hours, err := Parse("0 0 */5 * * *")
+	if err != nil {
+		t.Fatal(err)
+	}
+	after = time.Date(2026, 10, 9, 20, 0, 0, 0, time.UTC)
+	if next := hours.Next(after); !next.Equal(after.Add(4 * time.Hour)) {
+		t.Fatalf("hour step did not reset to midnight: %s", next)
 	}
 }
 
@@ -75,6 +156,7 @@ func TestLegacySchedules(t *testing.T) {
 		{"0 * * * * *", time.Date(2026, 10, 7, 12, 34, 15, 0, time.UTC), time.Date(2026, 10, 7, 12, 35, 0, 0, time.UTC)},
 		{"0 15 * * * *", time.Date(2026, 10, 7, 12, 20, 0, 0, time.UTC), time.Date(2026, 10, 7, 13, 15, 0, 0, time.UTC)},
 		{"0 30 13,17 * * *", time.Date(2026, 10, 7, 13, 30, 0, 0, time.UTC), time.Date(2026, 10, 7, 17, 30, 0, 0, time.UTC)},
+		{"0 30 17,23 * *", time.Date(2026, 10, 9, 17, 30, 0, 0, time.UTC), time.Date(2026, 10, 9, 23, 30, 0, 0, time.UTC)},
 		{"@every 10s", time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC), time.Date(2026, 10, 7, 12, 0, 10, 0, time.UTC)},
 		{"@every 60s", time.Date(2026, 10, 7, 12, 0, 17, 0, time.UTC), time.Date(2026, 10, 7, 12, 1, 17, 0, time.UTC)},
 	}
