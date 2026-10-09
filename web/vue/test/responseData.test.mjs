@@ -47,3 +47,15 @@ test('switching create/edit routes recreates forms instead of retaining previous
   const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
   assert.match(app, /router-view :key="\$route\.fullPath"/)
 })
+
+test('copy API posts IDs and destination without invoking move, enable or run', () => {
+  const source = readFileSync(new URL('../src/api/task.js', import.meta.url), 'utf8')
+  const script = source.replace(/^import .*$/gm, '').replace('export default', 'return')
+  const calls = []
+  const client = {post (...args) { calls.push(args) }}
+  const service = new Function('httpClient', script)(client)
+  const callback = () => {}
+  const failed = () => {}
+  service.copyTasks([42, 43], '备份', callback, failed)
+  assert.deepEqual(calls[0], ['/task/copy', {ids: '42,43', tag: '备份'}, callback, failed])
+})

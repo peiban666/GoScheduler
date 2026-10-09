@@ -29,6 +29,10 @@ export default {
     httpClient.post('/task/group', {ids: ids.join(','), tag}, callback, failed)
   },
 
+  copyTasks (ids, tag, callback, failed) {
+    httpClient.post('/task/copy', {ids: ids.join(','), tag}, callback, failed)
+  },
+
   // 任务列表
   list (query, callback) {
     httpClient.batchGet([

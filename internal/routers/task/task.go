@@ -80,6 +80,21 @@ func Groups(ctx *macaron.Context) string {
 	return json.Success(utils.SuccessContent, groups)
 }
 
+func Copy(ctx *macaron.Context) string {
+	json := utils.JsonResponse{}
+	ids, err := models.ParseTaskGroupIDs(ctx.Query("ids"))
+	if err != nil {
+		return json.CommonFailure(err.Error())
+	}
+	copies, err := new(models.Task).CopyTasks(ids, ctx.Query("tag"))
+	if err != nil {
+		return json.CommonFailure("复制失败，请检查目标分组和原任务后重试", err)
+	}
+	return json.Success("任务已复制，副本默认停用", map[string]interface{}{
+		"copied": len(copies), "tasks": copies,
+	})
+}
+
 func AssignGroup(ctx *macaron.Context) string {
 	json := utils.JsonResponse{}
 	ids, err := models.ParseTaskGroupIDs(ctx.QueryTrim("ids"))

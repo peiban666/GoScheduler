@@ -87,6 +87,7 @@ func Register(m *macaron.Macaron) {
 		m.Post("/group/rename", task.RenameGroup)
 		m.Post("/group/delete", task.DeleteGroup)
 		m.Post("/group", task.AssignGroup)
+		m.Post("/copy", task.Copy)
 		m.Post("/store", binding.Bind(task.TaskForm{}), task.Store)
 		m.Get("/:id", task.Detail)
 		m.Get("", task.Index)

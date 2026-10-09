@@ -44,13 +44,14 @@
     <el-table-column v-if="isAdmin" label="操作" width="220">
       <template slot-scope="scope">
         <el-row>
-          <el-button type="primary" @click="$emit('edit', scope.row)">编辑</el-button>
-          <el-button type="success" @click="$emit('run', scope.row)">手动执行</el-button>
+          <el-button size="small" type="primary" @click="$emit('edit', scope.row)">编辑</el-button>
+          <el-button size="small" type="success" @click="$emit('run', scope.row)">手动执行</el-button>
         </el-row>
         <br>
         <el-row>
-          <el-button type="info" @click="$emit('log', scope.row)">查看日志</el-button>
-          <el-button type="danger" @click="$emit('remove', scope.row)">删除</el-button>
+          <el-button size="small" type="info" @click="$emit('log', scope.row)">查看日志</el-button>
+          <el-button size="small" icon="el-icon-document-copy" @click="$emit('copy', scope.row)">复制</el-button>
+          <el-button size="small" type="danger" @click="$emit('remove', scope.row)">删除</el-button>
         </el-row>
       </template>
     </el-table-column>
@@ -84,4 +85,6 @@ export default {
 <style scoped>
 .task-details { font-size: 0; }
 .task-details .el-form-item { margin-right: 0; margin-bottom: 0; width: 50%; }
+.el-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.el-row .el-button { margin-left: 0; padding: 9px 10px; }
 </style>

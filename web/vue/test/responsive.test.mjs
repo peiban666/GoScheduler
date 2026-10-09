@@ -41,7 +41,7 @@ test('task filters, sidebar, tables and pagination have constrained responsive c
 test('all modified responsive templates compile', () => {
   for (const path of ['App.vue', 'components/common/navMenu.vue', 'pages/task/list.vue',
     'pages/task/edit.vue', 'pages/task/sidebar.vue', 'pages/system/sidebar.vue', 'pages/user/login.vue',
-    'components/task/schedulePicker.vue']) {
+    'components/task/schedulePicker.vue', 'components/task/taskTable.vue']) {
     const {template} = compiler.parseComponent(component(path))
     assert.deepEqual(compiler.compile(template.content).errors, [], path)
   }

@@ -10,12 +10,13 @@ const listSource = readFileSync(new URL('../src/pages/task/list.vue', import.met
 const script = listSource.match(/<script>([\s\S]*?)<\/script>/)[1].replace(/^import .*$/gm, '').replace('export default', 'return')
 
 function list () {
-  const calls = {groups: [], groupTasks: [], assignGroup: [], deleteGroup: []}
+  const calls = {groups: [], groupTasks: [], assignGroup: [], deleteGroup: [], copyTasks: []}
   const service = {
     hosts (callback) { callback([]) },
     groups (query, callback, failed) { calls.groups.push({query, callback, failed}) },
     groupTasks (query, callback, failed) { calls.groupTasks.push({query, callback, failed}) },
     assignGroup (ids, tag, callback, failed) { calls.assignGroup.push({ids, tag, callback, failed}) },
+    copyTasks (ids, tag, callback, failed) { calls.copyTasks.push({ids, tag, callback, failed}) },
     deleteGroup (tag, deleteTasks, expectedCount, callback, failed) { calls.deleteGroup.push({tag, deleteTasks, expectedCount, callback, failed}) }
   }
   const component = new Function('taskService', 'groupKey', 'groupQuery', 'prepareGroups', 'normalizeGroupName', 'taskSidebar', 'taskTable', 'groupPicker', 'groupCreateDialog', 'groupRenameDialog', script)(service, groupKey, groupQuery, prepareGroups, normalizeGroupName, {}, {}, {}, {}, {})
@@ -32,6 +33,88 @@ function list () {
 }
 
 const groups = [{name: '', total: 3}, {name: '备份', total: 52}, {name: '同步', total: 7}]
+
+test('single copy defaults to its source group without changing original tasks', () => {
+  const {vm, calls} = list()
+  vm.openCopyTasks({id: 42, tag: '备份'})
+  assert.equal(vm.copyDialog, true)
+  assert.deepEqual(Array.from(vm.copyIDs), [42])
+  assert.equal(vm.copyGroup, '备份')
+  assert.equal(calls.copyTasks.length, 0)
+  vm.copyGroup = '  同步  '
+  vm.confirmCopyTasks()
+  vm.confirmCopyTasks()
+  assert.equal(calls.copyTasks.length, 1)
+  assert.deepEqual(Array.from(calls.copyTasks[0].ids), [42])
+  assert.equal(calls.copyTasks[0].tag, '同步')
+  assert.equal(calls.assignGroup.length, 0)
+  calls.copyTasks[0].callback({copied: 1})
+  assert.equal(vm.copyDialog, false)
+  assert.equal(vm.copyingTasks, false)
+  assert.deepEqual(Array.from(vm.expandedGroups), ['group:同步'])
+  vm.$destroy()
+})
+
+test('batch copy snapshots cross-group selections and new-group creation does not clear them', () => {
+  const {vm, calls} = list()
+  vm.selectTasks('ungrouped', [{id: 1}, {id: 2}])
+  vm.selectTasks('group:备份', [{id: 2}, {id: 3}])
+  vm.openCopyTasks()
+  assert.deepEqual(Array.from(vm.copyIDs), [1, 2, 3])
+  const before = calls.groups.length
+  vm.copyGroupCreated('新组')
+  assert.equal(calls.groups.length, before + 1)
+  assert.deepEqual(Array.from(vm.selectedIDs), [1, 2, 3])
+  vm.selection = {}
+  vm.copyGroup = '新组'
+  vm.confirmCopyTasks()
+  assert.deepEqual(Array.from(calls.copyTasks[0].ids), [1, 2, 3])
+  calls.copyTasks[0].callback({copied: 3})
+  assert.equal(vm.copyIDs.length, 0)
+  assert.equal(vm.selectedIDs.length, 0)
+  assert.deepEqual(Array.from(vm.expandedGroups), ['group:新组'])
+  assert.equal(vm.searchParams.status, '')
+  vm.$destroy()
+})
+
+test('copy failures preserve the batch and destination for retry', () => {
+  const {vm, calls} = list()
+  vm.openCopyTasks({id: 42, tag: '备份'})
+  vm.copyGroup = 'a\nb'
+  vm.confirmCopyTasks()
+  assert.ok(vm.copyError)
+  assert.equal(calls.copyTasks.length, 0)
+  vm.copyGroup = ''
+  vm.confirmCopyTasks()
+  calls.copyTasks[0].failed(new Error('复制失败'))
+  assert.equal(vm.copyDialog, true)
+  assert.equal(vm.copyingTasks, false)
+  assert.equal(vm.copyError, '复制失败')
+  assert.deepEqual(Array.from(vm.copyIDs), [42])
+  vm.confirmCopyTasks()
+  assert.equal(calls.copyTasks.length, 2)
+  assert.equal(calls.copyTasks[1].tag, '')
+  vm.$destroy()
+})
+
+test('copy controls are admin-only and no selection means no request', () => {
+  const {vm, calls} = list()
+  vm.openCopyTasks()
+  vm.confirmCopyTasks()
+  assert.equal(calls.copyTasks.length, 0)
+  assert.equal(vm.copyDialog, false)
+  vm.isAdmin = false
+  vm.openCopyTasks({id: 42})
+  vm.copyIDs = [42]
+  vm.confirmCopyTasks()
+  assert.equal(calls.copyTasks.length, 0)
+  assert.equal(vm.copyDialog, false)
+  const table = readFileSync(new URL('../src/components/task/taskTable.vue', import.meta.url), 'utf8')
+  assert.match(table, /\$emit\('copy', scope\.row\)/)
+  assert.match(listSource, /@copy="openCopyTasks"/)
+  assert.match(listSource, /新任务默认停用/)
+  vm.$destroy()
+})
 
 test('default and named groups have distinct, safe query keys', () => {
   assert.notEqual(groupKey(''), groupKey('未分组'))

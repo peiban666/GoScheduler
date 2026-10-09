@@ -3,6 +3,7 @@
     <el-select
       ref="select"
       :value="selectedValue"
+      :disabled="disabled"
       filterable
       :filter-method="filterGroups"
       clearable
@@ -28,7 +29,8 @@ export default {
   components: {groupCreateDialog},
   props: {
     value: {type: String, default: ''},
-    groups: {type: Array, default: () => []}
+    groups: {type: Array, default: () => []},
+    disabled: {type: Boolean, default: false}
   },
   data () {
     return {
@@ -48,6 +50,7 @@ export default {
   },
   methods: {
     selectValue (value) {
+      if (this.disabled) return
       if (value === 'create') {
         this.$refs.select.blur()
         this.createDialog = true

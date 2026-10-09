@@ -37,10 +37,11 @@
         <el-button v-if="isAdmin" type="primary" @click="toEdit(null)">新增任务</el-button>
         <el-button v-if="isAdmin" icon="el-icon-plus" @click="createDialog = true">新建分组</el-button>
         <el-button v-if="isAdmin" :disabled="selectedIDs.length === 0" @click="moveDialog = true">移入分组<span v-if="selectedIDs.length">（{{selectedIDs.length}}）</span></el-button>
+        <el-button v-if="isAdmin" :disabled="selectedIDs.length === 0" icon="el-icon-document-copy" @click="openCopyTasks()">复制到分组<span v-if="selectedIDs.length">（{{selectedIDs.length}}）</span></el-button>
         <el-button :disabled="expandedGroups.length === 0" @click="expandedGroups = []">全部折叠</el-button>
         <el-button @click="refresh">刷新</el-button>
       </div>
-      <div class="group-hint">分组默认折叠，点击组名查看任务；勾选任务后可批量移入同一组。</div>
+      <div class="group-hint">分组默认折叠，点击组名查看任务；勾选任务后可批量移入或复制到分组。</div>
       <div v-loading="loadingGroups" class="group-overview">
         <el-alert v-if="groupError" title="分组加载失败，请点击刷新重试" type="error" :closable="false"></el-alert>
         <div v-else-if="!loadingGroups && groups.length === 0" class="group-empty">暂无符合条件的任务</div>
@@ -59,7 +60,7 @@
               <el-button v-if="groupStates[group.key].error" size="small" @click="loadGroup(group)">加载失败，点击重试</el-button>
               <template v-if="groupStates[group.key].loaded">
                 <task-table :tasks="groupStates[group.key].tasks" :is-admin="isAdmin"
-                  @selection-change="selectTasks(group.key, $event)" @edit="toEdit" @run="runTask" @remove="remove" @log="jumpToLog" @status="changeStatus">
+                  @selection-change="selectTasks(group.key, $event)" @edit="toEdit" @copy="openCopyTasks" @run="runTask" @remove="remove" @log="jumpToLog" @status="changeStatus">
                 </task-table>
                 <el-pagination background layout="prev, pager, next, sizes, total" :total="groupStates[group.key].total"
                   :pager-count="5"
@@ -78,6 +79,25 @@
         <span slot="footer">
           <el-button :disabled="savingGroup" @click="moveDialog = false">取消</el-button>
           <el-button type="primary" :loading="savingGroup" :disabled="selectedIDs.length === 0" @click="assignGroup">确定移入</el-button>
+        </span>
+      </el-dialog>
+      <el-dialog
+        :title="copyIDs.length === 1 ? '复制任务' : '批量复制任务到分组'"
+        :visible.sync="copyDialog"
+        width="480px"
+        :show-close="!copyingTasks"
+        :close-on-click-modal="!copyingTasks"
+        :close-on-press-escape="!copyingTasks">
+        <p>将 {{copyIDs.length}} 个任务复制到以下分组，原任务保留不变。</p>
+        <group-picker v-model="copyGroup" :groups="groupChoices" :disabled="copyingTasks" @created="copyGroupCreated"></group-picker>
+        <div class="group-hint">可选择已有分组、未分组，或「＋ 新建分组」。</div>
+        <div class="group-hint">执行时间、命令、请求体、节点、重试和通知配置一并复制；名称自动添加“副本”。</div>
+        <el-alert title="新任务默认停用，不会自动执行；请检查后再启用。" type="info" :closable="false"></el-alert>
+        <div class="group-hint">已选任务间的依赖指向新副本；未选中的依赖仍指向原任务，请启用前检查。</div>
+        <div v-if="copyError" class="copy-error" role="alert">{{copyError}}</div>
+        <span slot="footer">
+          <el-button :disabled="copyingTasks" @click="copyDialog = false">取消</el-button>
+          <el-button type="primary" :loading="copyingTasks" :disabled="copyIDs.length === 0" @click="confirmCopyTasks">确定复制</el-button>
         </span>
       </el-dialog>
       <group-create-dialog v-model="createDialog" @created="groupCreated"></group-create-dialog>
@@ -153,6 +173,11 @@ export default {
       moveDialog: false,
       moveGroup: '',
       savingGroup: false,
+      copyDialog: false,
+      copyIDs: [],
+      copyGroup: '',
+      copyError: '',
+      copyingTasks: false,
       createDialog: false,
       renameDialog: false,
       renameTarget: '',
@@ -189,6 +214,7 @@ export default {
       const newKey = groupKey(name)
       if (this.selectedGroup === oldKey) this.selectedGroup = newKey
       if (this.moveGroup === oldName) this.moveGroup = name
+      if (this.copyGroup === oldName) this.copyGroup = name
       this.expandedGroups = this.expandedGroups.map(key => key === oldKey ? newKey : key)
       this.selection = {}
       this.groupStates = {}
@@ -332,6 +358,44 @@ export default {
         this.loadGroups()
       }, () => { this.savingGroup = false })
     },
+    openCopyTasks (task) {
+      if (!this.isAdmin || this.copyingTasks) return
+      const ids = task ? [task.id] : this.selectedIDs
+      if (!ids.length) return
+      // Freeze the chosen IDs: refreshing group choices must not change the batch.
+      this.copyIDs = ids.slice()
+      this.copyGroup = task ? (task.tag || '') : ''
+      this.copyError = ''
+      this.copyDialog = true
+      this.loadChoices()
+    },
+    copyGroupCreated () {
+      // Do not reload task pages here: that would clear the user's selection.
+      this.loadChoices()
+    },
+    confirmCopyTasks () {
+      if (!this.isAdmin || this.copyingTasks || !this.copyIDs.length) return
+      let name
+      try { name = normalizeGroupName(this.copyGroup) } catch (error) { this.copyError = error.message; return }
+      this.copyError = ''
+      this.copyingTasks = true
+      taskService.copyTasks(this.copyIDs.slice(), name, result => {
+        this.copyingTasks = false
+        this.copyDialog = false
+        this.copyIDs = []
+        this.selection = {}
+        this.groupStates = {}
+        this.selectedGroup = ''
+        this.searchParams = {id: '', name: '', protocol: '', host_id: '', status: ''}
+        this.expandedGroups = [groupKey(name)]
+        this.$message.success(`已复制 ${result.copied} 个任务，副本默认停用`)
+        this.loadChoices()
+        this.loadGroups()
+      }, error => {
+        this.copyingTasks = false
+        this.copyError = (error && error.message) || '复制失败，请重试'
+      })
+    },
     changeStatus (task) {
       const method = task.status ? 'enable' : 'disable'
       taskService[method](task.id)
@@ -356,6 +420,7 @@ export default {
 .group-toolbar .el-button { margin-left: 0; }
 .group-summary { margin-right: auto; color: #606266; }
 .group-hint { color: #909399; font-size: 13px; line-height: 1.7; margin: 10px 0; }
+.copy-error { color: #f56c6c; margin-top: 10px; }
 .group-overview { min-height: 80px; }
 .group-title { display: flex; flex: 1; min-width: 0; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; line-height: 1.6; }
 .group-title strong { overflow-wrap: anywhere; }
